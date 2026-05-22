@@ -89,3 +89,11 @@
     * 成功通過 `redis-cli -x PUT vm:broadcast` 注入預先編譯的 3 週期 LED 閃爍 VmScript 位元組流。
     * 控制台即時輸出 `[ServerGo Debug] L2Executor::put for key: vm:broadcast` 與 `[ServerGo] Forwarded VM script frame to MAC: [FF, FF, FF, FF, FF, FF]`，確認二進制指令流已完美編譯成 Gateway 訊框並成功寫入物理序列埠 `/dev/cu.usbmodem5ABA0089811`。
     * 連接到 Gateway 的兩台實體 ESP32-C6 裸機節點收到廣播後，順暢觸發 VM script 反射式控制， Soldier 節點實體 LED 閃爍任務完美執行！
+
+### 7. 說明文件更新與版本交付 (v0.3.3)
+* **實作與交付細節**：
+  * **撰寫 Premium ReadMe.md**：為 `tiny_io_oi` 打造了架構層面極其完整、排版專業精美的說明文件。內容深入探討了非對稱邊緣反射架構（Asymmetric Edge Architecture）的商業價值與系統架構，並利用 Mermaid 流程圖清楚呈現了從 RESP Gateway (ServerGo) 到實體 ESP32 控制節點的完整訊號與控制拓撲。
+  * **關鍵特徵說明**：文件中清晰記載了 `#[io_oi_node]` 巨集之編譯期剪枝靜態匹配路由、零拷貝 MicroVM Bytecode 執行期特徵、燃料耗盡/斷言失敗時的 Motor Safe Shutdown 物理防禦機制、以及無 Heap `no_std` 下的 lock-free static arena 和 TinyArc 設計。
+  * **實體驗證與部署指引**：提供了完整的單元/整合測試執行方法、RESP 實體動態注入測試的完整操作流程，以及 ESP32-C6 的 RISC-V 交叉編譯與 `espflash` 燒錄步驟。
+  * **Git 提交與遠端推送**：完成了代碼變更與說明文件的 staging，順利 commit 並 push 至 `master` 分支（`git@github.com:hianova/tiny_io_oi.git`），完成全套工作流的無縫交付！
+
