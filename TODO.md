@@ -81,4 +81,11 @@
     * 通過所有 15 項整合與單元測試（包含 lock-free arena 執行緒安全釋放、VM 動態執行與 active failover 安全防禦）。
     * 在 `esp32_firmware` 中以 `riscv32imac-unknown-none-elf` 目標編譯成功，無任何 warning 或是 error。
 
-
+### 6. E2E 系統驗證與 macOS 多執行緒架構完美運作 (v0.3.2)
+* **實作與驗證細節**：
+  * **解決連接掛起問題**：由於 macOS 上的 `tokio::runtime::Builder::new_current_thread()` 內部調度特性，我們將 macOS 底下的 `ServerGo` 改為在主多執行緒 runtime 上直接運行 RESP Gateway 監聽器與通道接收器。此舉彻底消除了 `redis-cli` 的 TCP 連線 hang/deadlock 狀況。
+  * **RESP 協議流暢響應**：重新編譯啟動後，`redis-cli -p 6379 PING` 能夠毫秒級瞬間響應並返回 `PONG`，並在後台日誌中產生清晰的解析紀錄：`[Gateway Debug] Parsed command: Ping` & `[ServerGo Debug] Received request: Ping`。
+  * **VM Script 動態注入與廣播**：
+    * 成功通過 `redis-cli -x PUT vm:broadcast` 注入預先編譯的 3 週期 LED 閃爍 VmScript 位元組流。
+    * 控制台即時輸出 `[ServerGo Debug] L2Executor::put for key: vm:broadcast` 與 `[ServerGo] Forwarded VM script frame to MAC: [FF, FF, FF, FF, FF, FF]`，確認二進制指令流已完美編譯成 Gateway 訊框並成功寫入物理序列埠 `/dev/cu.usbmodem5ABA0089811`。
+    * 連接到 Gateway 的兩台實體 ESP32-C6 裸機節點收到廣播後，順暢觸發 VM script 反射式控制， Soldier 節點實體 LED 閃爍任務完美執行！
