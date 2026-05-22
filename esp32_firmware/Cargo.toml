@@ -1,0 +1,19 @@
+[package]
+name = "esp32_firmware"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+esp-hal = { version = "0.22.0", features = ["esp32c6"] }
+esp-backtrace = { version = "0.14.2", features = [
+    "esp32c6",
+    "panic-handler",
+    "println",
+], default-features = false }
+esp-println = { version = "0.12.0", features = ["esp32c6", "uart"], default-features = false }
+esp-bootloader-esp-idf = "0.1.0"
+esp-alloc = { version = "0.5.0" }
+rkyv = { version = "0.7.46", default-features = false, features = ["alloc", "validation", "strict", "size_32"] }
+tiny_io_oi = { path = "../", default-features = false, features = ["tiny-node"] }
+getrandom = { version = "0.2.17", features = ["custom"] }
+

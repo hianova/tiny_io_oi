@@ -1,0 +1,17 @@
+[package]
+name = "tiny_io_oi"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+io_oi_core = { version = "0.2.1", path = "../io_oi/core", default-features = false }
+rkyv = { version = "0.7.46", default-features = false, features = ["alloc", "validation", "strict", "size_32"] }
+bytecheck = { version = "0.6.12", default-features = false }
+tiny_io_oi_macros = { path = "./tiny_io_oi_macros" }
+cdDB = { version = "0.2.3", path = "../cdDB", default-features = false }
+spin = "0.9"
+
+[features]
+default = ["std"]
+std = []
+tiny-node = []

@@ -1,0 +1,17 @@
+[target.riscv32imac-unknown-none-elf]
+runner = "espflash flash --monitor --ignore-app-descriptor"
+rustflags = [
+  "-C", "link-arg=-Tlinkall.x",
+]
+
+[build]
+target = "riscv32imac-unknown-none-elf"
+
+[profile.release]
+codegen-units = 1
+debug = 2
+debug-assertions = false
+incremental = false
+lto = 'fat'
+opt-level = 's'
+overflow-checks = false

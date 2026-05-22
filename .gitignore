@@ -1,0 +1,4 @@
+/target
+esp32_firmware/target/
+scratch/
+*.bin
