@@ -2,3 +2,4 @@
 esp32_firmware/target/
 scratch/
 *.bin
+TODO.md
