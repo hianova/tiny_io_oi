@@ -189,5 +189,15 @@ espflash flash target/riscv32imac-unknown-none-elf/release/esp32_firmware --moni
 
 ---
 
+## ⚡ Bun FFI JavaScript/TypeScript Integrations
+
+`tiny_io_oi` includes production-grade FFI bindings designed specifically for **Bun's ultra-low-latency Native FFI**. This allows host-side coordinators to control swarms dynamically and perform zero-copy DSP operations directly from JS/TS:
+*   **Bilingual Developer Guide**: Check out the comprehensive [Bun FFI README Guide](./bun/README.md) for full setup instructions in both English and 繁體中文.
+*   **LED Blink Example**: See the [Blink Swarm LED example script](./bun/README.md#example-1-blinking-swarm-led-bytecode-compilation--broadcast) to learn how to dynamically compile VmScript binary commands on-the-fly.
+*   **FFT Vibration Damping**: See the [FFT DSP example script](./bun/README.md#example-2-real-time-active-vibration-damping-via-high-speed-fft) to analyze sensory raw buffers with zero GC overhead.
+
+---
+
 ## 📄 License
 Licensed under the [PolyForm-Noncommercial-1.0.0](PolyForm-Noncommercial-1.0.0.txt). For commercial usage or custom swarms, please contact the development team.
+
