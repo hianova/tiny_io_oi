@@ -6,6 +6,7 @@ pub mod hardware;
 pub mod vm;
 pub mod node;
 pub mod gateway;
+pub mod std_impl;
 
 #[cfg(feature = "std")]
 pub mod ffi;
@@ -83,6 +84,10 @@ pub trait Motor {
 /// Hardware abstraction for GPIO inputs.
 pub trait Gpio {
     fn read_pin(&self, pin: u8) -> u8;
+}
+
+pub trait Adc {
+    fn read_adc_buffer(&self, pin: u8, buffer: &mut [i16]);
 }
 
 pub use io_oi_core::{VmStep, VmScript, ArchivedVmScript, ArchivedVmStep, GatewayFrame, ArchivedGatewayFrame};
@@ -687,5 +692,52 @@ mod tests {
         // Magnitude at the peak index should be significantly high
         let peak_index = (10.0 / (sample_rate / n as f32)).round() as usize;
         assert!(output_mag[peak_index] > 10.0);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_std_library_execution() {
+        use crate::drivers::{MockMotor, MockGpio};
+        use crate::vm::MicroVm;
+
+        let mut motor = MockMotor::new();
+        let mut gpio = MockGpio::new();
+
+        // Opcode 0x80, Pin 3, param_a (Q15 threshold 1.0 = 32767), param_b (max_hz = 100)
+        let bytecode = [
+            0x80, 3, 0xFF, 0x7F, 100, 0, 0, 0, // 8-bytes
+        ];
+
+        let mut vm = MicroVm::new(100);
+        // Set mock pin value so ADC amplitude is low (below threshold) -> should succeed
+        gpio.set_pin(3, 1);
+        let res = vm.run_std(&bytecode, &mut motor, &gpio);
+        assert!(res.is_ok());
+
+        // Set mock pin value high so ADC amplitude is high -> should trigger VibrationHazard
+        gpio.set_pin(3, 100);
+        let res = vm.run_std(&bytecode, &mut motor, &gpio);
+        assert!(res.is_err());
+        assert_eq!(motor.current_speed, 0); // verified safe shutdown!
+
+        // 2. Test AvoidResonance (Pin 5: resonance)
+        // Opcode 0x81, Pin 5, param_a (resonance_hz = 45), param_b (tolerance = 5, motor_chan = 1) -> packed: (5 << 24) | (1 << 16) = 0x05010000
+        let tolerance = 5u32;
+        let chan = 1u32;
+        let param_b = (tolerance << 24) | (chan << 16);
+        let param_b_bytes = param_b.to_le_bytes();
+
+        let bytecode_2 = [
+            0x81, 5, 45, 0, param_b_bytes[0], param_b_bytes[1], param_b_bytes[2], param_b_bytes[3]
+        ];
+
+        let mut vm2 = MicroVm::new(100);
+        let mut motor2 = MockMotor::new();
+        motor2.set_speed(50);
+        gpio.set_pin(5, 5); // some vibration
+        let res2 = vm2.run_std(&bytecode_2, &mut motor2, &gpio);
+        assert!(res2.is_ok());
+        // Since frequency (45Hz) falls inside tolerance, speed should shift/increase by +10% to 110!
+        assert_eq!(motor2.current_speed, 110);
     }
 }

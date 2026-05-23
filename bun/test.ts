@@ -1,4 +1,4 @@
-import { TinyNode } from "./index";
+import { TinyNode, TinyScriptBuilder, LogicOp, Band, symbols } from "./index";
 import { fft } from "./dsp";
 
 console.log("⚡ Starting Bun FFI Bindings Integration Verification...");
@@ -47,6 +47,70 @@ console.log(`✓ Detected Resonant Peak Frequency: ${peakResonance} Hz`);
 // Assert resonance peak accuracy
 if (Math.abs(peakResonance - targetFreq) > 1.0) {
   throw new Error(`Resonant peak frequency mismatch! Expected: ${targetFreq}, Got: ${peakResonance}`);
+}
+
+// =========================================================================
+// 3. Verify Semantic Hardware Standard Library v1.0 & v1.1
+// =========================================================================
+console.log("\n[Test 3] Testing Semantic Hardware Standard Library VmScript FFI...");
+
+// Compile standard library 8-byte steps:
+// Step 1: AssertVibration on Pin 3, threshold = 1.0 Q15 (32767), maxHz = 100Hz
+const stdBuilder = new TinyScriptBuilder()
+  .assertVibration(3, 100, 1.0)
+  .avoidResonance({
+    sensorPin: 5,
+    motorChannel: 1,
+    resonanceHz: 45,
+    toleranceHz: 5
+  });
+
+const stdBytecode = stdBuilder.serialize();
+console.log(`✓ Standard library script compiled: ${stdBytecode.length} bytes`);
+console.log(`✓ Hex dump: ${Array.from(stdBytecode).map(b => b.toString(16).padStart(2, "0")).join("")}`);
+
+if (stdBytecode.length !== 16) {
+  throw new Error(`Expected exactly 16 bytes for 2 instructions, got ${stdBytecode.length}`);
+}
+
+// Execute the standard library bytecode inside Rust MicroVM using FFI
+const outSpeedBuf = new Uint8Array(1);
+const outSpeedPtr = Bun.FFI.ptr(outSpeedBuf);
+
+// Test Case A: Safe sensory vibration (vibration pin value = 1)
+console.log("  Running Case A: Low vibration amplitude (pin value = 1)...");
+const statusA = symbols.run_standard_bytecode(
+  Bun.FFI.ptr(stdBytecode),
+  stdBytecode.length,
+  100,            // Fuel
+  50,             // Initial motor speed
+  1,              // Pin sensor vibration strength (low amplitude)
+  outSpeedPtr
+);
+const finalSpeedA = outSpeedBuf[0];
+console.log(`  ✓ Execution status: ${statusA} (Expected: 0)`);
+console.log(`  ✓ Motor Speed: ${finalSpeedA} (Expected: 110 due to AvoidResonance target)`);
+
+if (statusA !== 0 || finalSpeedA !== 110) {
+  throw new Error(`Case A failed: status=${statusA}, speed=${finalSpeedA}`);
+}
+
+// Test Case B: Hazardous sensory vibration (vibration pin value = 100)
+console.log("  Running Case B: High vibration amplitude (pin value = 100)...");
+const statusB = symbols.run_standard_bytecode(
+  Bun.FFI.ptr(stdBytecode),
+  stdBytecode.length,
+  100,            // Fuel
+  50,             // Initial motor speed
+  100,            // Pin sensor vibration strength (excessive amplitude)
+  outSpeedPtr
+);
+const finalSpeedB = outSpeedBuf[0];
+console.log(`  ✓ Execution status: ${statusB} (Expected: 2 - VibrationHazard exception)`);
+console.log(`  ✓ Motor Speed: ${finalSpeedB} (Expected: 0 - emergency Safe Shutdown)`);
+
+if (statusB !== 2 || finalSpeedB !== 0) {
+  throw new Error(`Case B failed: status=${statusB}, speed=${finalSpeedB}`);
 }
 
 console.log("\n🎉 ALL Bun FFI integration tests passed successfully!");

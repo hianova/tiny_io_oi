@@ -118,6 +118,25 @@ impl crate::Gpio for MockGpio {
     }
 }
 
+impl crate::Adc for MockGpio {
+    fn read_adc_buffer(&self, pin: u8, buffer: &mut [i16]) {
+        let freq = match pin {
+            3 => 125, // Mock nozzle scraping frequency (AssertVibration target)
+            5 => 45,  // Mock structure resonance frequency (AvoidResonance target)
+            _ => 10,
+        };
+        let amp = if (pin as usize) < self.pins.len() {
+            self.pins[pin as usize] as f32
+        } else {
+            1.0f32
+        };
+        for i in 0..buffer.len() {
+            let t = i as f32 / 1000.0f32;
+            buffer[i] = (amp * 1.5f32 * libm::sinf(2.0f32 * core::f32::consts::PI * freq as f32 * t)) as i16;
+        }
+    }
+}
+
 /// A mock UART implementation for testing GatewayBridge.
 pub struct MockUart {
     pub incoming: VecDeque<u8>,

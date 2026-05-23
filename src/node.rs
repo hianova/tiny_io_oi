@@ -199,6 +199,9 @@ impl<N: Network, M: Motor, S: IoOiState, G: Gpio, const CACHE_SIZE: usize> TinyN
                                         err_buf[3] = expected;
                                         err_buf[4] = actual;
                                     }
+                                    _ => {
+                                        err_buf[1] = 0x03; // Standard Library Vibration/Acoustic exception code
+                                    }
                                 }
                                 let _ = self.network.broadcast(OpCode::Exception, &err_buf);
                             }

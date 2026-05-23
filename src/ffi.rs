@@ -1,6 +1,6 @@
 #![cfg(feature = "std")]
 
-use crate::{VmScript, VmStep};
+use crate::{VmScript, VmStep, Motor};
 use rustfft::{FftPlanner, num_complex::Complex};
 
 /// A simple Rust-side builder to accumulate VmSteps before serializing them for FFI consumption.
@@ -128,4 +128,46 @@ pub extern "C" fn rust_fft(
     let peak_freq = (peak_index as f32) * freq_resolution;
 
     peak_freq
+}
+
+/// Dynamic host FFI executor to run and verify semantic standard library bytecodes
+/// inside the Rust MicroVM, testing motor reactions to physical ADCs/vibrations.
+#[unsafe(no_mangle)]
+pub extern "C" fn run_standard_bytecode(
+    bytecode_ptr: *const u8,
+    bytecode_len: u32,
+    fuel: u32,
+    initial_motor_speed: u8,
+    pin_sensor_val: u8,
+    out_final_motor_speed: *mut u8,
+) -> i32 {
+    if bytecode_ptr.is_null() || bytecode_len == 0 || out_final_motor_speed.is_null() {
+        return -1;
+    }
+
+    let bytecode = unsafe { std::slice::from_raw_parts(bytecode_ptr, bytecode_len as usize) };
+    let mut vm = crate::vm::MicroVm::new(fuel);
+    let mut motor = crate::drivers::MockMotor::new();
+    motor.set_speed(initial_motor_speed);
+
+    let mut gpio = crate::drivers::MockGpio::new();
+    gpio.set_pin(3, pin_sensor_val);
+    gpio.set_pin(5, pin_sensor_val);
+
+    match vm.run_std(bytecode, &mut motor, &gpio) {
+        Ok(_) => {
+            unsafe { *out_final_motor_speed = motor.current_speed };
+            0 // Success
+        }
+        Err(e) => {
+            unsafe { *out_final_motor_speed = motor.current_speed };
+            match e {
+                crate::vm::VmError::OutOfFuel => 1,
+                crate::vm::VmError::VibrationHazard { .. } => 2,
+                crate::vm::VmError::MultiBandSpectrumHazard => 3,
+                crate::vm::VmError::AcousticFailureDetected => 4,
+                _ => 99,
+            }
+        }
+    }
 }

@@ -16,6 +16,7 @@ cdDB = { version = "0.2.3", path = "../cdDB", default-features = false }
 spin = "0.9"
 rustfft = { version = "6.2", optional = true }
 num-complex = { version = "0.4", default-features = false, optional = true }
+libm = "0.2"
 
 [features]
 default = ["std"]
