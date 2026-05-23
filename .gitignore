@@ -1,5 +1,5 @@
 /target
-esp32_firmware/target/
+**/target/
 scratch/
 *.bin
-TODO.md
+.DS_Store

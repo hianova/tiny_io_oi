@@ -26,8 +26,8 @@ Before running the TypeScript scripts, you must compile the Rust dynamic library
 cargo build
 
 # 2. Verify that the library is generated
-# On macOS: target/debug/libtiny_io_oi.dylib
-# On Linux: target/debug/libtiny_io_oi.so
+# On macOS: target/debug/libtiny_io_oi_host.dylib
+# On Linux: target/debug/libtiny_io_oi_host.so
 ```
 
 ### 繁體中文
@@ -38,8 +38,8 @@ cargo build
 cargo build
 
 # 2. 確認動態庫成功生成
-# macOS 系統下路徑為: target/debug/libtiny_io_oi.dylib
-# Linux 系統下路徑為: target/debug/libtiny_io_oi.so
+# macOS 系統下路徑為: target/debug/libtiny_io_oi_host.dylib
+# Linux 系統下路徑為: target/debug/libtiny_io_oi_host.so
 ```
 
 ---
@@ -51,7 +51,7 @@ cargo build
     *   Compiles a dynamic hardware script and returns a compiled `Uint8Array` ready for serial/network broadcast.
     *   將硬體控制邏輯編譯成可用於序列埠或網絡廣播的 `Uint8Array` 位元組流。
 
-### `ScriptBuilder`
+### `ScriptBuilder` (Dynamic VmScript)
 *   `setPwm(channel: number, speed: number): this`
     *   Sets PWM duty cycle (`0`–`255`) on a specified channel.
     *   設定指定通道的實體 PWM 佔空比（`0`–`255`）。
@@ -61,6 +61,11 @@ cargo build
 *   `assertOrYield(pin: number, expected: boolean | number): this`
     *   Asserts a GPIO pin level. Aborts execution and triggers `Safe Shutdown` if assertion fails.
     *   斷言指定 GPIO 腳位電平。若斷言失敗則立刻中斷執行並觸發「安全馬達關閉」。
+
+### `TinyScriptBuilder` (Semantic Standard Library v1.1)
+*   `assertSpatialConsensus(options): this`
+    *   Asserts decentralized spatial consensus. Triggers Safe Shutdown only if `kNeighbors` unique adjacent geopins assert hazard within `timeWindowMs`.
+    *   斷言分散式智慧地釘空間共識。僅當至少 `kNeighbors` 個鄰居於 `timeWindowMs` 時間內發佈超過 `highThreshold` 的高頻譜危險強度時，才執行安全馬達停止並回報 Exception。
 
 ### `fft(rawBuffer: Float32Array, sampleRate?: number): Spectrum`
 *   Performs a zero-allocation Fast Fourier Transform (FFT) on the raw buffer.
@@ -169,6 +174,44 @@ if (peakFrequency > 60) {
   // Forward damping script via broadcast instantly
   // 瞬間透過序列網關發射抑振指令流
   console.log(`✓ Dynamic Damping Script compiled: ${dampingScript.length} bytes.`);
+}
+### 🧠 Example 3: Palantir AIP Cybernetic OODA & Mock Post-Training Hot-Injection
+#### 範例三：Palantir AIP 控制論 OODA 與後訓練策略熱更新注入
+
+This example demonstrates how the central server evaluates outcomes (like frequent false alarms), adjusts parameters inside the ontology knowledge graph, recompiles an updated spatial consensus script, and deploys/hot-injects it dynamically.
+此範例展示中央伺服器如何評估執行結果（如頻繁的誤報）、更新本體論知識圖譜參數，自動編譯優化後的空間共識防護腳本並動態發射/熱更新注入。
+
+```typescript
+import { MockPostTrainingEngine, SlopeKnowledgeGraph, StaticVerifier } from "./index";
+
+// 1. Initialize our Ontology digital twin representing the physical slope
+// 建立代表實體滑坡數位孿生的本體論知識圖譜
+const currentSlopeKnowledge: SlopeKnowledgeGraph = {
+  baselineVibration: 0.15,
+  knownInterferences: [25], // 25Hz train passing by
+  falsePositiveCount: 3,    // Simulate three false alarm vibration alerts
+  currentThreshold: 0.5,     // Initial triggering threshold: 0.5
+};
+
+const aipEngine = new MockPostTrainingEngine();
+
+// 2. Trigger nightly AIP post-training weight optimization based on outcome data
+// 執行 AIP 後訓練優化引擎：分析假警報率，動態拉高閾值 15% 以抑制干擾噪聲
+const optimizedVmScript = aipEngine.runDailyOptimization(currentSlopeKnowledge, []);
+
+if (optimizedVmScript) {
+  console.log(`✓ AIP Optimized Threshold: ${currentSlopeKnowledge.currentThreshold}`);
+  
+  // 3. Symbolically check and verify safety proof before hot-injecting to geopin Swarm
+  // 4. 在向智慧地釘蜂群發射熱更新前，進行形式化數學安全驗證
+  const verResult = StaticVerifier.verify(optimizedVmScript, true);
+  console.log(verResult.report);
+  
+  if (verResult.safe) {
+    // 5. Deploy / Hot-Inject the compiled standard library script via serial gateway
+    // 6. 瞬間將安全字節碼發射熱注入至邊緣地釘！
+    console.log("🚀 VmScript hot-injected successfully! Swarm evolution complete.");
+  }
 }
 ```
 

@@ -1,0 +1,26 @@
+[package]
+name = "tiny_io_oi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+io_oi_core = { version = "0.2.1", path = "../../../io_oi/core", default-features = false }
+rkyv = { workspace = true }
+bytecheck = { workspace = true }
+tiny_io_oi_macros = { path = "../tiny-io-oi-macros" }
+cdDB = { version = "0.2.3", path = "../../../cdDB", default-features = false }
+spin = { workspace = true }
+rustfft = { version = "6.2", optional = true }
+num-complex = { version = "0.4", default-features = false, optional = true }
+libm = { workspace = true }
+heapless = { workspace = true }
+
+[features]
+default = ["std", "ptp", "verifier"]
+std = ["rustfft", "num-complex"]
+tiny-node = []
+ptp = []
+verifier = []

@@ -1,0 +1,15 @@
+[package]
+name = "tiny-io-oi-host"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+tiny_io_oi = { path = "../tiny-io-oi", default-features = true }
+rustfft = "6.2"
+num-complex = { version = "0.4", default-features = false }
+rkyv = { workspace = true }
+bytecheck = { workspace = true }
+io_oi_core = { version = "0.2.1", path = "../../../io_oi/core" }

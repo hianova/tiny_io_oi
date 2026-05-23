@@ -1,0 +1,11 @@
+[package]
+name = "tiny-io-oi-tools"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tiny_io_oi = { path = "../tiny-io-oi", default-features = true }
+serialport = "4.3"
+rkyv = { workspace = true }
+bytecheck = { workspace = true }
+io_oi_core = { version = "0.2.1", path = "../../../io_oi/core" }

@@ -3,11 +3,37 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::vec::Vec;
 
-use crate::{Network, Motor, Gpio, IoOiState, OpCode, NodeId, to_core_id, from_core_id, VmError, MicroVm};
+use crate::{Network, Motor, Gpio, Adc, IoOiState, OpCode, NodeId, to_core_id, from_core_id, VmError, MicroVm};
 use io_oi_core::{NodeId as CoreNodeId, VmScript};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GossipAssertion {
+    pub sender_mac: [u8; 6],
+    pub timestamp_us: u64,
+    pub hazard_score: u16,
+}
+
+pub struct GossipContext<'a, N: Network> {
+    pub my_mac: [u8; 6],
+    pub network: &'a mut N,
+    pub recent_gossip: &'a [GossipAssertion],
+    pub current_time_us: u64,
+}
+
+#[inline(always)]
+pub fn get_time_us() -> u64 {
+    #[cfg(feature = "ptp")]
+    {
+        crate::ptp::PTP_CLOCK.lock().get_time_us()
+    }
+    #[cfg(not(feature = "ptp"))]
+    {
+        0
+    }
+}
+
 /// The Soldier node implementation
-pub struct TinyNode<N: Network, M: Motor, S: IoOiState, G: Gpio, const CACHE_SIZE: usize> {
+pub struct TinyNode<N: Network, M: Motor, S: IoOiState, G: Gpio + Adc, const CACHE_SIZE: usize> {
     pub id: NodeId,
     pub network: N,
     pub motor: M,
@@ -19,9 +45,10 @@ pub struct TinyNode<N: Network, M: Motor, S: IoOiState, G: Gpio, const CACHE_SIZ
     pub disqualified_leader: Option<NodeId>,
     pub last_leader_msg: Option<(OpCode, Vec<u8>)>,
     pub leader_active: bool,
+    pub recent_gossip: heapless::Vec<GossipAssertion, 8>,
 }
 
-impl<N: Network, M: Motor, S: IoOiState, G: Gpio, const CACHE_SIZE: usize> TinyNode<N, M, S, G, CACHE_SIZE> {
+impl<N: Network, M: Motor, S: IoOiState, G: Gpio + Adc, const CACHE_SIZE: usize> TinyNode<N, M, S, G, CACHE_SIZE> {
     pub fn new(id: NodeId, network: N, motor: M, state: S, gpio: G) -> Self {
         Self {
             id,
@@ -35,6 +62,7 @@ impl<N: Network, M: Motor, S: IoOiState, G: Gpio, const CACHE_SIZE: usize> TinyN
             disqualified_leader: None,
             last_leader_msg: None,
             leader_active: false,
+            recent_gossip: heapless::Vec::new(),
         }
     }
 
@@ -102,6 +130,12 @@ impl<N: Network, M: Motor, S: IoOiState, G: Gpio, const CACHE_SIZE: usize> TinyN
     pub fn tick(&mut self) {
         self.decay_scores();
 
+        // Expire assertions from the cache (5-second validity window)
+        let current_ptp_time = get_time_us();
+        self.recent_gossip.retain(|assertion| {
+            current_ptp_time.saturating_sub(assertion.timestamp_us) <= 5_000_000
+        });
+
         // If we previously had an active leader, and now get_leader() is None,
         // that means the leader's heartbeat decayed to zero (went offline).
         if self.leader_active && self.get_leader().is_none() {
@@ -148,6 +182,38 @@ impl<N: Network, M: Motor, S: IoOiState, G: Gpio, const CACHE_SIZE: usize> TinyN
                             if self.disqualified_leader != Some(leader_id) {
                                 self.safe_mode = false;
                             }
+                        }
+                    }
+                }
+                OpCode::SpatialGossip => {
+                    if payload.len() >= 16 {
+                        let mut mac = [0u8; 6];
+                        mac.copy_from_slice(&payload[0..6]);
+                        
+                        let timestamp_us = u64::from_le_bytes([
+                            payload[6], payload[7], payload[8], payload[9],
+                            payload[10], payload[11], payload[12], payload[13]
+                        ]);
+                        
+                        let hazard_score = u16::from_le_bytes([payload[14], payload[15]]);
+                        
+                        // Push to recent_gossip if it doesn't already exist or updates an existing entry
+                        let mut exists = false;
+                        for entry in self.recent_gossip.iter_mut() {
+                            if entry.sender_mac == mac {
+                                entry.timestamp_us = timestamp_us;
+                                entry.hazard_score = hazard_score;
+                                exists = true;
+                                break;
+                            }
+                        }
+                        if !exists {
+                            let assertion = GossipAssertion {
+                                sender_mac: mac,
+                                timestamp_us,
+                                hazard_score,
+                            };
+                            let _ = self.recent_gossip.push(assertion);
                         }
                     }
                 }
@@ -205,6 +271,78 @@ impl<N: Network, M: Motor, S: IoOiState, G: Gpio, const CACHE_SIZE: usize> TinyN
                                 }
                                 let _ = self.network.broadcast(OpCode::Exception, &err_buf);
                             }
+                        } else {
+                            // FALLBACK: Execute as standard library 8-byte bytecode
+                            let mut vm = MicroVm::new(100);
+                            let gossip_ctx = GossipContext {
+                                my_mac: self.id,
+                                network: &mut self.network,
+                                recent_gossip: &self.recent_gossip,
+                                current_time_us: get_time_us(),
+                            };
+                            if let Err(e) = vm.run_std(payload, &mut self.motor, &self.gpio, Some(gossip_ctx)) {
+                                self.motor.stop();
+                                let mut err_buf = [0u8; 5];
+                                err_buf[0] = 0xFF; // Exception identifier
+                                match e {
+                                    VmError::OutOfFuel => {
+                                        err_buf[1] = 0x01;
+                                    }
+                                    VmError::UnauthorizedAccess => {
+                                        err_buf[1] = 0x05;
+                                    }
+                                    VmError::VibrationHazard { .. } => {
+                                        err_buf[1] = 0x02;
+                                    }
+                                    VmError::MultiBandSpectrumHazard => {
+                                        err_buf[1] = 0x03;
+                                    }
+                                    VmError::AcousticFailureDetected => {
+                                        err_buf[1] = 0x04;
+                                    }
+                                    _ => {
+                                        err_buf[1] = 0x99;
+                                    }
+                                }
+                                let _ = self.network.broadcast(OpCode::Exception, &err_buf);
+                            }
+                        }
+                    }
+                }
+                OpCode::StdBytecodeDispatch => {
+                    if !self.safe_mode {
+                        let mut vm = MicroVm::new(100);
+                        let gossip_ctx = GossipContext {
+                            my_mac: self.id,
+                            network: &mut self.network,
+                            recent_gossip: &self.recent_gossip,
+                            current_time_us: get_time_us(),
+                        };
+                        if let Err(e) = vm.run_std(payload, &mut self.motor, &self.gpio, Some(gossip_ctx)) {
+                            self.motor.stop();
+                            let mut err_buf = [0u8; 5];
+                            err_buf[0] = 0xFF; // Exception identifier
+                            match e {
+                                VmError::OutOfFuel => {
+                                    err_buf[1] = 0x01;
+                                }
+                                VmError::UnauthorizedAccess => {
+                                    err_buf[1] = 0x05;
+                                }
+                                VmError::VibrationHazard { .. } => {
+                                    err_buf[1] = 0x02;
+                                }
+                                VmError::MultiBandSpectrumHazard => {
+                                    err_buf[1] = 0x03;
+                                }
+                                VmError::AcousticFailureDetected => {
+                                    err_buf[1] = 0x04;
+                                }
+                                _ => {
+                                    err_buf[1] = 0x99;
+                                }
+                            }
+                            let _ = self.network.broadcast(OpCode::Exception, &err_buf);
                         }
                     }
                 }

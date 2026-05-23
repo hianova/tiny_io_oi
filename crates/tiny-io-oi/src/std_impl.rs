@@ -11,6 +11,7 @@ pub enum StdOpCode {
     EnvelopeCheck   = 0x85,
     #[cfg(feature = "ptp")]
     DelayUntil      = 0x86,
+    SpatialConsensusAssert = 0x87,
 }
 
 /// A structure to hold static/stack complex values during FFT computation.
@@ -155,13 +156,14 @@ pub struct StdExecutor;
 impl StdExecutor {
     /// Executes semantic hardware standard library step.
     #[inline(always)]
-    pub fn execute_step<M: Motor, A: Adc>(
+    pub fn execute_step<M: Motor, A: Adc, N: crate::Network>(
         opcode: u8,
         pin: u8,
         param_a: u16,
         param_b: u32,
         motor: &mut M,
         adc: &A,
+        gossip_ctx: &mut Option<crate::node::GossipContext<'_, N>>,
     ) -> Result<(), VmError> {
         // Read raw sensory ADC samples directly (using 256 stack samples)
         let mut raw_samples = [0i16; 256];
@@ -267,7 +269,7 @@ impl StdExecutor {
                     motor.stop();
                     return Err(VmError::AcousticFailureDetected);
                 } else if mid_energy > mid_threshold {
-                    // Mid-freq structural resonance -> Auto调频/Speed offset +15%
+                    // Mid-freq structural resonance -> Auto調頻/Speed offset +15%
                     motor.set_speed(115);
                 } else if low_energy > low_threshold {
                     // Low-freq load imbalance -> Limit max speed to 70%
@@ -281,13 +283,85 @@ impl StdExecutor {
             #[cfg(feature = "ptp")]
             0x86 => {
                 let target_us = ((param_a as u64) << 32) | (param_b as u64);
+                let start_us = crate::ptp::PTP_CLOCK.lock().get_time_us();
+                let max_timeout_us = 10_000_000u64; // 10s safety timeout guard
                 loop {
                     let current = crate::ptp::PTP_CLOCK.lock().get_time_us();
                     if current >= target_us {
                         break;
                     }
+                    if current.saturating_sub(start_us) > max_timeout_us {
+                        return Err(VmError::OutOfFuel); // Timeout safety fallback
+                    }
                     #[cfg(feature = "std")]
                     std::thread::yield_now();
+                }
+            }
+
+            // ==========================================
+            // 0x87: SpatialConsensusAssert (空間共識斷言)
+            // ==========================================
+            0x87 => {
+                let threshold_q15 = param_a;
+                
+                let k_neighbors = (param_b >> 24) as u8;
+                let time_window_ms = ((param_b >> 16) & 0xFF) as u32;
+                let high_threshold = (param_b & 0xFFFF) as u16;
+
+                // Perform fixed-point FFT to get energies
+                let mut magnitudes = [0.0f32; 128];
+                heapless_fft_256(&raw_samples, &mut magnitudes);
+                let (low_energy, mid_energy, _high_energy) = calculate_band_energies(&magnitudes, sample_rate);
+
+                // Use low_energy + mid_energy as local hazard score
+                let local_hazard = low_energy.saturating_add(mid_energy);
+
+                // Check if our local energy exceeds the threshold
+                if local_hazard > threshold_q15 {
+                    if let Some(ctx) = gossip_ctx {
+                        // 1. Broadcast our own Gossip frame
+                        let mut payload = [0u8; 16];
+                        payload[0..6].copy_from_slice(&ctx.my_mac);
+                        
+                        let time_le = ctx.current_time_us.to_le_bytes();
+                        payload[6..14].copy_from_slice(&time_le);
+                        
+                        let score_le = local_hazard.to_le_bytes();
+                        payload[14..16].copy_from_slice(&score_le);
+                        
+                        // Send over the network
+                        let _ = ctx.network.broadcast(crate::OpCode::SpatialGossip, &payload);
+
+                        // 2. Count unique neighbor MAC addresses within the time window
+                        let mut unique_neighbors = heapless::Vec::<[u8; 6], 8>::new();
+                        let time_window_us = (time_window_ms as u64) * 1000;
+                        
+                        for entry in ctx.recent_gossip.iter() {
+                            // Verify the assertion timestamp is within the time window
+                            let time_diff = ctx.current_time_us.saturating_sub(entry.timestamp_us);
+                            if time_diff <= time_window_us && entry.sender_mac != ctx.my_mac && entry.hazard_score >= high_threshold {
+                                if !unique_neighbors.contains(&entry.sender_mac) {
+                                    let _ = unique_neighbors.push(entry.sender_mac);
+                                }
+                            }
+                        }
+
+                        #[cfg(feature = "std")]
+                        println!(
+                            "[SpatialConsensus] Local hazard: {} > threshold: {}. Unique confirming neighbors: {}/{}",
+                            local_hazard, threshold_q15, unique_neighbors.len(), k_neighbors
+                        );
+
+                        // If we have >= K_neighbors confirming, we trigger the hazard!
+                        if unique_neighbors.len() as u8 >= k_neighbors {
+                            motor.stop(); // Safe Shutdown
+                            return Err(VmError::MultiBandSpectrumHazard);
+                        } else {
+                            // Else we wait for spatial consensus
+                            #[cfg(feature = "std")]
+                            println!("[SpatialConsensus] Vibration detected but waiting for spatial consensus...");
+                        }
+                    }
                 }
             }
 

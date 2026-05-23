@@ -74,11 +74,12 @@ impl MicroVm {
     }
 
     /// Execute semantic standard library bytecode script.
-    pub fn run_std<M: Motor, A: Adc>(
+    pub fn run_std<M: Motor, A: Adc, N: crate::Network>(
         &mut self,
         bytecode: &[u8],
         motor: &mut M,
         adc: &A,
+        mut gossip_ctx: Option<crate::node::GossipContext<'_, N>>,
     ) -> Result<(), VmError> {
         let mut offset = 0;
         while offset + 8 <= bytecode.len() {
@@ -102,7 +103,7 @@ impl MicroVm {
                 bytecode[offset + 7],
             ]);
 
-            crate::std_impl::StdExecutor::execute_step(opcode, pin, param_a, param_b, motor, adc)?;
+            crate::std_impl::StdExecutor::execute_step(opcode, pin, param_a, param_b, motor, adc, &mut gossip_ctx)?;
             offset += 8;
         }
         Ok(())

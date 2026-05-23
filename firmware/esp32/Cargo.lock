@@ -774,6 +774,7 @@ checksum = "960703930f9f3c899ddedd122ea27a09d6a612c22323157e524af5b18876448e"
 dependencies = [
  "esp-build",
  "log",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -849,6 +850,7 @@ name = "esp32_firmware"
 version = "0.1.0"
 dependencies = [
  "embedded-hal-nb",
+ "embedded-io",
  "esp-alloc",
  "esp-backtrace",
  "esp-bootloader-esp-idf",
@@ -856,6 +858,7 @@ dependencies = [
  "esp-println",
  "esp-wifi",
  "getrandom",
+ "libm",
  "nb 1.1.0",
  "rkyv",
  "tiny_io_oi",
@@ -1741,6 +1744,7 @@ version = "0.1.0"
 dependencies = [
  "bytecheck",
  "cdDB",
+ "heapless",
  "io_oi_core",
  "libm",
  "rkyv",

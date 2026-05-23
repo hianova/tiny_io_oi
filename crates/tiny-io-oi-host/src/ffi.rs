@@ -154,7 +154,7 @@ pub extern "C" fn run_standard_bytecode(
     gpio.set_pin(3, pin_sensor_val);
     gpio.set_pin(5, pin_sensor_val);
 
-    match vm.run_std(bytecode, &mut motor, &gpio) {
+    match vm.run_std::<_, _, crate::drivers::MockNetwork>(bytecode, &mut motor, &gpio, None) {
         Ok(_) => {
             unsafe { *out_final_motor_speed = motor.current_speed };
             0 // Success

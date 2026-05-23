@@ -84,34 +84,50 @@ In industrial environments, hardware failures or communication errors can be cat
 *   **Physical Assertion Failures (`AssertOrYield`)**: Triggers real-time interrupt checks.
 *   **Safe Shutdown Hook**: Instantly pulls all registered PWM/GPIO channels to `0` upon any trap or exception, broadcasting an `OpCode::Exception` packet back to the gateway.
 
-### 💾 4. Lock-Free Static Arena & `TinyArc` (No-Heap)
+### 4. Lock-Free Static Arena & `TinyArc` (No-Heap)
 To prevent heap fragmentation and memory leaks on bare-metal systems, `tiny_io_oi` includes an embedded-optimized `TinyArc` reference-counting model backed by a global thread-safe **Lock-Free Static Arena**. This delivers absolute memory safety and zero memory leaks under extreme multi-threaded bare-metal workloads.
 
 ### 📡 5. Active Subjective Failover & Leader Demotion
 *   **Heartbeat Decay**: Soldier nodes track subjective leader heartbeat status. If the master/leader drops offline, nodes decay their trust scores and autonomously enter **Safe Mode** (disabling actuators).
 *   **Double-Sign Protection**: If a compromised leader sends conflicting instructions within the same Epoch, nodes detect the cryptographic double-sign violation, write the conflict to the Local Jury Log, disqualify the leader, and trigger safe-state demotion.
 
+### 📡 6. Decentralized Spatial Consensus Protocol (Anti-Spoofing)
+To prevent malicious local physical spoofing (e.g. attaching a small vibrator to a single geopin to trick the sensor into triggering fraud landslide claims), we introduce **Spatial Consensus**:
+*   **Decentralized Gossip**: When local vibration exceeds safety limits, nodes broadcast physical hazard signatures (`MAC`, `timestamp_us`, `hazard_score`) using `OpCode::SpatialGossip = 0x05`.
+*   **Multi-Point Coherence**: The `SpatialConsensusAssert = 0x87` standard library instruction counts unique neighboring assertions within a specific microsecond time window. An alarm is only raised if `>= K_neighbors` confirm the hazard.
+*   **Active Cache Pruning**: Outdated neighboring claims (older than 5 seconds) are automatically pruned inside `TinyNode::tick()`.
+
+### 🧠 7. Palantir AIP Cybernetic OODA Closed-Loop Optimization
+Builds a complete cybernetic feedback loop connecting edge sensors, digital twins, and server-side machine learning:
+*   **Ontology Representation**: The digital twin modeled in TS represents the physical slope (`SlopeKnowledgeGraph` & `Slope`).
+*   **Outcome-Driven Optimization**: When edge sensors trigger high false positives (e.g. daily train vibrations), the server-side AIP dynamically fine-tunes thresholds, recompiles optimized `VmScript` scripts, and hot-injects them to Frontline nodes while creating cryptographic audit trails.
+
 ---
 
 ## 📁 Repository Structure
 
 ```
-tiny_io_oi/
-├── Cargo.toml                  # Workspace dependencies & features (std / tiny-node)
+tiny_io_oi/ (Workspace Root)
+├── Cargo.toml                  # Root Workspace Configuration (excludes bare-metal target)
 ├── ReadMe.md                   # You are here
 ├── SPEC.md                     # Lean specification for the io_oi consensus model
 ├── TODO.md                     # Active tracking of the development progress
 ├── PERF.md                     # Performance benchmarks and version updates
-├── tiny_io_oi_macros/          # Proc-macro implementation for #[io_oi_node]
-├── esp32_firmware/             # ESP32-C6 bare-metal firmware implementing the Soldier & Gateway roles
-└── src/
-    ├── lib.rs                  # Module declarations and primary exports
-    ├── drivers.rs              # Physical driver abstraction layer & mock implementations
-    ├── hardware.rs             # Hardware state router, PWM and GPIO mapping
-    ├── memory.rs               # Lock-free Static Arena & reference-counted TinyArc
-    ├── vm.rs                   # Zero-copy bytecode executor micro-virtual-machine
-    ├── node.rs                 # Active failover state-machine & swarm node control
-    └── gateway.rs              # USB Serial framing and GatewayBridge pipeline
+│
+├── crates/                     # ── Cargo Workspace Sub-Crates ──
+│   ├── tiny-io-oi/             # 1. Pure no_std VM, protocols, and Gossip consensus
+│   ├── tiny-io-oi-macros/      # 2. #[io_oi_node] proc-macro crate
+│   ├── tiny-io-oi-host/        # 3. Host std SDK, FFT, and Bun FFI bindings
+│   └── tiny-io-oi-tools/       # 4. Host developer/flashing tools (verify_geopin, monitor_logs)
+│
+├── bun/                        # ── Bun TypeScript Integrations ──
+│   ├── index.ts                # Bun FFI dynamic symbol loader & builders
+│   ├── ontology.ts             # Slope & Knowledge Graph digital twin definitions
+│   ├── mock_aip.ts             # AIP post-training closed-loop optimizer
+│   └── test.ts                 # Bilingual FFI and OODA loop verification script
+│
+└── firmware/                   # ── Bare-Metal Actuator Firmwares ──
+    └── esp32/                  # ESP32-C6 bare-metal firmware project
 ```
 
 ---
@@ -177,7 +193,7 @@ cargo install espflash cargo-espflash
 
 ### Build the Firmware
 ```bash
-cd esp32_firmware
+cd firmware/esp32
 cargo build --release --target riscv32imac-unknown-none-elf
 ```
 

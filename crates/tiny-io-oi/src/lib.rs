@@ -8,9 +8,6 @@ pub mod node;
 pub mod gateway;
 pub mod std_impl;
 
-#[cfg(feature = "std")]
-pub mod ffi;
-
 #[cfg(feature = "ptp")]
 pub mod ptp;
 
@@ -30,11 +27,13 @@ use io_oi_core::NodeId as CoreNodeId;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpCode {
     Heartbeat = 0x04,
+    SpatialGossip = 0x05,
     TaskDispatch = 0x20,
     TaskAchieved = 0x21,
     TaskFailed = 0x22,
     StateUpdate = 0x30, // New opcode for bitmask session
     VmScriptDispatch = 0x40, // New: for distributing zero-copy VM bytecode
+    StdBytecodeDispatch = 0x41, // New: for distributing standard library bytecode
     Exception = 0xFF,        // New: for Exception / Trap reporting
 }
 
@@ -42,11 +41,13 @@ impl From<u8> for OpCode {
     fn from(value: u8) -> Self {
         match value {
             0x04 => OpCode::Heartbeat,
+            0x05 => OpCode::SpatialGossip,
             0x20 => OpCode::TaskDispatch,
             0x21 => OpCode::TaskAchieved,
             0x22 => OpCode::TaskFailed,
             0x30 => OpCode::StateUpdate,
             0x40 => OpCode::VmScriptDispatch,
+            0x41 => OpCode::StdBytecodeDispatch,
             0xFF => OpCode::Exception,
             _ => OpCode::Heartbeat,
         }
@@ -641,67 +642,6 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn test_ffi_script_builder_and_fft() {
-        use crate::ffi::*;
-
-        // 1. Test Script Builder FFI
-        let builder = create_script_builder();
-        assert!(!builder.is_null());
-
-        script_builder_add_pwm(builder, 1, 128);
-        script_builder_add_delay(builder, 50);
-        script_builder_add_assert(builder, 5, 1);
-
-        let mut out_len = 0u32;
-        let ptr = script_builder_serialize(builder, &mut out_len as *mut u32);
-        assert!(!ptr.is_null());
-        assert!(out_len > 0);
-
-        // Deserialize to verify
-        let slice = unsafe { std::slice::from_raw_parts(ptr, out_len as usize) };
-        let archived = rkyv::check_archived_root::<VmScript>(slice).unwrap();
-        assert_eq!(archived.steps.len(), 3);
-        
-        match &archived.steps[0] {
-            io_oi_core::ArchivedVmStep::SetPwm { channel, speed } => {
-                assert_eq!(*channel, 1);
-                assert_eq!(*speed, 128);
-            }
-            _ => panic!("Expected SetPwm"),
-        }
-
-        free_serialized_bytes(ptr, out_len);
-        script_builder_free(builder);
-
-        // 2. Test FFT FFI
-        // Input: 10Hz sine wave sampled at 100Hz
-        // Length must be a power of 2, let's use 128
-        let n = 128;
-        let sample_rate = 100.0f32;
-        let freq = 10.0f32;
-        let mut input = vec![0.0f32; n];
-        for i in 0..n {
-            let t = i as f32 / sample_rate;
-            input[i] = (2.0f32 * std::f32::consts::PI * freq * t).sin();
-        }
-
-        let mut output_mag = vec![0.0f32; n / 2];
-        let peak_freq = rust_fft(
-            input.as_ptr(),
-            n as u32,
-            sample_rate,
-            output_mag.as_mut_ptr(),
-        );
-
-        // Peak frequency should be extremely close to 10Hz
-        assert!((peak_freq - 10.0).abs() < 1.0);
-        // Magnitude at the peak index should be significantly high
-        let peak_index = (10.0 / (sample_rate / n as f32)).round() as usize;
-        assert!(output_mag[peak_index] > 10.0);
-    }
-
-    #[cfg(feature = "std")]
-    #[test]
     fn test_std_library_execution() {
         use crate::drivers::{MockMotor, MockGpio};
         use crate::vm::MicroVm;
@@ -717,12 +657,12 @@ mod tests {
         let mut vm = MicroVm::new(100);
         // Set mock pin value so ADC amplitude is low (below threshold) -> should succeed
         gpio.set_pin(3, 1);
-        let res = vm.run_std(&bytecode, &mut motor, &gpio);
+        let res = vm.run_std::<_, _, crate::drivers::MockNetwork>(&bytecode, &mut motor, &gpio, None);
         assert!(res.is_ok());
 
         // Set mock pin value high so ADC amplitude is high -> should trigger VibrationHazard
         gpio.set_pin(3, 100);
-        let res = vm.run_std(&bytecode, &mut motor, &gpio);
+        let res = vm.run_std::<_, _, crate::drivers::MockNetwork>(&bytecode, &mut motor, &gpio, None);
         assert!(res.is_err());
         assert_eq!(motor.current_speed, 0); // verified safe shutdown!
 
@@ -741,7 +681,7 @@ mod tests {
         let mut motor2 = MockMotor::new();
         motor2.set_speed(50);
         gpio.set_pin(5, 5); // some vibration
-        let res2 = vm2.run_std(&bytecode_2, &mut motor2, &gpio);
+        let res2 = vm2.run_std::<_, _, crate::drivers::MockNetwork>(&bytecode_2, &mut motor2, &gpio, None);
         assert!(res2.is_ok());
         // Since frequency (45Hz) falls inside tolerance, speed should shift/increase by +10% to 110!
         assert_eq!(motor2.current_speed, 110);
@@ -777,36 +717,99 @@ mod tests {
         let mut motor = MockMotor::new();
         let gpio = crate::drivers::MockGpio::new();
         
-        let res = vm.run_std(&bytecode, &mut motor, &gpio);
+        let res = vm.run_std::<_, _, crate::drivers::MockNetwork>(&bytecode, &mut motor, &gpio, None);
         assert!(res.is_ok());
         handle.join().unwrap();
     }
 
-    #[cfg(all(feature = "verifier", feature = "std"))]
+    #[cfg(feature = "std")]
     #[test]
-    fn test_verifier_ffi_mathematical_proofs() {
-        // Test standard bytecode verifier via FFI or directly
-        let p_b = 0x05030000u32;
-        let mut bytecode = alloc::vec![0x81, 5];
-        bytecode.extend_from_slice(&100u16.to_le_bytes());
-        bytecode.extend_from_slice(&p_b.to_le_bytes());
+    fn test_spatial_consensus_gossip() {
+        use crate::drivers::{MockMotor, MockGpio, MockNetwork, MockState};
+        use crate::vm::MicroVm;
+        use crate::node::{TinyNode, GossipContext, get_time_us};
 
-        let mut out_safe = false;
-        let mut out_len = 0u32;
-        let ptr = crate::ffi::rust_verify_std_bytecode(
-            bytecode.as_ptr(),
-            bytecode.len() as u32,
-            500,
-            &mut out_safe,
-            &mut out_len,
+        let mut node = TinyNode::<_, _, MockState, MockGpio, 2>::new(
+            [0; 6], // my MAC address
+            MockNetwork::new(),
+            MockMotor::new(),
+            MockState::default(),
+            MockGpio::new(),
         );
 
-        assert!(out_safe);
-        assert!(out_len > 0);
-        let slice = unsafe { std::slice::from_raw_parts(ptr, out_len as usize) };
-        let report = String::from_utf8(slice.to_vec()).unwrap();
-        assert!(report.contains("100% mathematically proven"));
+        // Opcode 0x87, Pin 3, param_a (Q15 energy threshold = 500)
+        // param_b: K_neighbors = 2, TimeWindow_ms = 100, HighThreshold = 300
+        // packed param_b = (2 << 24) | (100 << 16) | 300 = 0x0264012C
+        let param_b_val = (2u32 << 24) | (100u32 << 16) | 300u32;
+        let param_b_bytes = param_b_val.to_le_bytes();
 
-        crate::ffi::free_serialized_bytes(ptr, out_len);
+        let bytecode = [
+            0x87, 3, 0xF4, 0x01, param_b_bytes[0], param_b_bytes[1], param_b_bytes[2], param_b_bytes[3]
+        ];
+
+        // 1. Initial State: No neighbors confirming, vibration is high (amplitude 1000 so FFT energy exceeds 500)
+        node.gpio.set_pin(3, 100); // high vibration
+        node.motor.set_speed(100);
+
+        let mut vm = MicroVm::new(100);
+        let gossip_ctx = GossipContext {
+            my_mac: node.id,
+            network: &mut node.network,
+            recent_gossip: &node.recent_gossip,
+            current_time_us: get_time_us(),
+        };
+
+        // Should NOT trigger the hazard because no neighbors have asserted yet
+        let res = vm.run_std(&bytecode, &mut node.motor, &node.gpio, Some(gossip_ctx));
+        assert!(res.is_ok());
+        assert_eq!(node.motor.current_speed, 100); // motor still runs
+
+        // 2. Neighbor 1 asserts (MAC: [1; 6], hazard score 400)
+        let n1_mac = [1; 6];
+        let mut n1_payload = [0u8; 16];
+        n1_payload[0..6].copy_from_slice(&n1_mac);
+        let time_bytes = get_time_us().to_le_bytes();
+        n1_payload[6..14].copy_from_slice(&time_bytes);
+        n1_payload[14..16].copy_from_slice(&400u16.to_le_bytes());
+
+        node.network.simulate_receive(n1_mac, OpCode::SpatialGossip, &n1_payload);
+        node.tick(); // processes received frame and populates recent_gossip cache
+
+        let mut vm = MicroVm::new(100);
+        let gossip_ctx = GossipContext {
+            my_mac: node.id,
+            network: &mut node.network,
+            recent_gossip: &node.recent_gossip,
+            current_time_us: get_time_us(),
+        };
+
+        // Still should NOT trigger because we need K = 2 neighbors and only 1 neighbor is confirming
+        let res = vm.run_std(&bytecode, &mut node.motor, &node.gpio, Some(gossip_ctx));
+        assert!(res.is_ok());
+        assert_eq!(node.motor.current_speed, 100);
+
+        // 3. Neighbor 2 asserts (MAC: [2; 6], hazard score 500)
+        let n2_mac = [2; 6];
+        let mut n2_payload = [0u8; 16];
+        n2_payload[0..6].copy_from_slice(&n2_mac);
+        n2_payload[6..14].copy_from_slice(&time_bytes);
+        n2_payload[14..16].copy_from_slice(&500u16.to_le_bytes());
+
+        node.network.simulate_receive(n2_mac, OpCode::SpatialGossip, &n2_payload);
+        node.tick();
+
+        let mut vm = MicroVm::new(100);
+        let gossip_ctx = GossipContext {
+            my_mac: node.id,
+            network: &mut node.network,
+            recent_gossip: &node.recent_gossip,
+            current_time_us: get_time_us(),
+        };
+
+        // NOW spatial consensus is achieved (2 neighbors confirming)!
+        // Should trigger pre-alert MultiBandSpectrumHazard and execute safe shutdown (stop motor)
+        let res = vm.run_std(&bytecode, &mut node.motor, &node.gpio, Some(gossip_ctx));
+        assert_eq!(res, Err(VmError::MultiBandSpectrumHazard));
+        assert_eq!(node.motor.current_speed, 0); // safe shutdown!
     }
 }

@@ -2,7 +2,7 @@ import { cc, dlopen, ptr, suffix } from "bun:ffi";
 import { join } from "path";
 
 // Locate the dynamic library compiled by Rust
-const libPath = join(import.meta.dir, "../target/debug/libtiny_io_oi." + suffix);
+const libPath = join(import.meta.dir, "../target/debug/libtiny_io_oi_host." + suffix);
 
 // Define symbols for C FFI bindings under Bun
 export const { symbols } = dlopen(libPath, {
@@ -341,6 +341,37 @@ export class TinyScriptBuilder {
   }
 
   /**
+   * 0x87: SpatialConsensusAssert (空間共識斷言)
+   * 
+   * Triggers emergency Safe Shutdown and broadcasts exception ONLY IF local middle/low energy
+   * exceeds the threshold AND at least K neighboring unique geopins confirm the hazard within time window.
+   */
+  public assertSpatialConsensus(options: {
+    sensorPin: number;
+    threshold: number;      // Q15 amplitude threshold (0.0 ~ 2.0)
+    kNeighbors: number;     // Number of neighboring unique geopins required (0 ~ 255)
+    timeWindowMs: number;   // Time window for neighboring assertions (0 ~ 255 ms)
+    highThreshold: number;  // Hazard score threshold for neighbors (Q15, 0.0 ~ 2.0)
+  }): this {
+    const view = new DataView(this.buffer.buffer);
+    const thresholdQ15 = Math.min(Math.max(options.threshold * 32768, 0), 65535);
+    const neighborThresholdQ15 = Math.min(Math.max(options.highThreshold * 32768, 0), 65535);
+
+    // Pack Parameter B: [K (1B)] [TimeWindowMs (1B)] [NeighborThresholdQ15 (2B)]
+    const paramB = ((options.kNeighbors & 0xFF) << 24) |
+                   ((options.timeWindowMs & 0xFF) << 16) |
+                   (neighborThresholdQ15 & 0xFFFF);
+
+    view.setUint8(this.offset, 0x87);
+    view.setUint8(this.offset + 1, options.sensorPin);
+    view.setUint16(this.offset + 2, thresholdQ15, true); // Parameter A
+    view.setUint32(this.offset + 4, paramB, true);       // Parameter B
+
+    this.offset += 8;
+    return this;
+  }
+
+  /**
    * Serializes the standard library steps into raw byte array.
    */
   public serialize(): Uint8Array {
@@ -395,7 +426,7 @@ export class StaticVerifier {
         for (let i = 0; i < steps; i++) {
           const op = view.getUint8(i * 8);
           const pin = view.getUint8(i * 8 + 1);
-          if (op < 0x80 || op > 0x85) {
+          if (op < 0x80 || op > 0x87) {
             safe = false;
             reportLines.push(`❌ OpCode Violation: Unauthorized OpCode 0x${op.toString(16)} detected at step ${i}`);
           }
@@ -426,3 +457,7 @@ export class StaticVerifier {
     return { safe, report: reportLines.join("\n") };
   }
 }
+
+export * from "./ontology";
+export * from "./mock_aip";
+

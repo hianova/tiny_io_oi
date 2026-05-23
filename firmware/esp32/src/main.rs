@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+esp_bootloader_esp_idf::esp_app_desc!();
+
 use esp_backtrace as _;
 use esp_hal::{
     gpio::{Level, Output, OutputConfig},
@@ -12,6 +14,7 @@ use tiny_io_oi::{
     TinyNode, OpCode, Gpio, Motor, Network, IoOiState, DigitalOutput, PwmOutput,
     HardwareRouter, Uart, GatewayBridge, NodeId,
 };
+use embedded_io::Write as _;
 
 
 fn custom_getrandom(buf: &mut [u8]) -> Result<(), getrandom::Error> {
@@ -48,6 +51,19 @@ impl Gpio for EspGpio {
     }
 }
 
+impl tiny_io_oi::Adc for EspGpio {
+    fn read_adc_buffer(&self, _pin: u8, buffer: &mut [i16]) {
+        // Landslide prelude: 20Hz low-frequency deep vibration waves
+        let sample_rate = 1000.0f32;
+        let freq = 20.0f32;
+        for i in 0..buffer.len() {
+            let t = i as f32 / sample_rate;
+            let val = libm::sinf(2.0f32 * core::f32::consts::PI * freq * t) * 5000.0f32;
+            buffer[i] = val as i16;
+        }
+    }
+}
+
 struct EspUart<'a> {
     uart: esp_hal::uart::Uart<'a, esp_hal::Blocking>,
 }
@@ -73,12 +89,33 @@ impl<'a> Uart for EspUart<'a> {
     }
 }
 
+struct EspUsbSerialJtag<'a> {
+    usb: esp_hal::usb_serial_jtag::UsbSerialJtag<'a, esp_hal::Blocking>,
+}
+
+impl<'a> Uart for EspUsbSerialJtag<'a> {
+    fn read(&mut self) -> Option<u8> {
+        match self.usb.read_byte() {
+            Ok(b) => Some(b),
+            _ => None,
+        }
+    }
+
+    fn write(&mut self, data: &[u8]) -> Result<(), &'static str> {
+        match self.usb.write_all(data) {
+            Ok(_) => Ok(()),
+            Err(_) => Err("USB JTAG write failed"),
+        }
+    }
+}
+
 struct EspNowNetwork<'a> {
     esp_now: esp_wifi::esp_now::EspNow<'a>,
 }
 
 impl<'a> Network for EspNowNetwork<'a> {
     fn broadcast(&mut self, opcode: OpCode, payload: &[u8]) -> Result<(), &'static str> {
+        esp_println::println!("📤 ESP-NOW Broadcasting OpCode: {:?}, Payload: {:02X?}", opcode, payload);
         let mut msg = [0u8; 256];
         if payload.len() + 1 > msg.len() {
             return Err("Payload too long");
@@ -100,9 +137,13 @@ impl<'a> Network for EspNowNetwork<'a> {
         match self.esp_now.send(&broadcast_mac, &msg[..1 + payload.len()]) {
             Ok(waiter) => {
                 let _ = waiter.wait();
+                esp_println::println!("✓ ESP-NOW Broadcast completed successfully!");
                 Ok(())
             }
-            Err(_) => Err("ESP-NOW send failed"),
+            Err(_) => {
+                esp_println::println!("❌ ESP-NOW Broadcast failed!");
+                Err("ESP-NOW send failed")
+            }
         }
     }
 
@@ -113,6 +154,7 @@ impl<'a> Network for EspNowNetwork<'a> {
             if !data.is_empty() {
                 let opcode = OpCode::from(data[0]);
                 let payload = &data[1..];
+                esp_println::println!("📥 ESP-NOW Recv from {:02X?}, opcode: {:?}, payload_len: {}", src, opcode, payload.len());
                 let len = payload.len().min(buffer.len());
                 buffer[..len].copy_from_slice(&payload[..len]);
                 return Some((src, opcode, &buffer[..len]));
@@ -166,7 +208,7 @@ impl<'a> DigitalOutput for EspPin<'a> {
 
 #[esp_hal::main]
 fn main() -> ! {
-    esp_alloc::heap_allocator!(size: 8192);
+    esp_alloc::heap_allocator!(size: 131_072);
 
     let peripherals = esp_hal::init(esp_hal::Config::default());
     let _clocks = esp_hal::clock::Clocks::get();
@@ -190,15 +232,13 @@ fn main() -> ! {
 
     #[cfg(feature = "gateway")]
     {
-        // Gateway Bridge role
-        let uart = esp_hal::uart::Uart::new(
-            peripherals.UART0,
-            esp_hal::uart::Config::default(),
-        )
-        .unwrap();
-        let esp_uart = EspUart { uart };
+        // Gateway Bridge role using native USB JTAG Serial
+        let usb = esp_hal::usb_serial_jtag::UsbSerialJtag::new(
+            peripherals.USB_DEVICE,
+        );
+        let esp_usb = EspUsbSerialJtag { usb };
 
-        let mut bridge = GatewayBridge::new(network, esp_uart);
+        let mut bridge = GatewayBridge::new(network, esp_usb);
 
         // Blink 3 times on boot to signal Gateway mode
         let mut boot_led = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
@@ -208,6 +248,8 @@ fn main() -> ! {
             boot_led.set_low();
             delay.delay_millis(200);
         }
+
+        esp_println::println!("⚡ Gateway Bridge started! Ready to route USB UART <-> ESP-NOW");
 
         loop {
             bridge.tick();
@@ -248,8 +290,16 @@ fn main() -> ! {
             delay.delay_millis(150);
         }
 
+        esp_println::println!("⚡ Soldier Node started! MAC: {:02X?}", my_mac);
+
+        let mut tick_cnt = 0;
         loop {
             node.tick();
+            
+            tick_cnt += 1;
+            if tick_cnt % 200 == 0 {
+                esp_println::println!("Node tick #{}, safe_mode: {}, leader: {:?}", tick_cnt, node.safe_mode, node.get_leader());
+            }
             
             let dummy_payload = &[];
             let _ = router.apply_waveforms(dummy_payload);

@@ -534,3 +534,13 @@ pub fn genesis(cfg: GenesisConfig) -> Node {
 // - 邊界路由安全證明（Boundary Safety Proof）：逐條指令掃描引腳（Pin < 32）和通道（Channel < 8）匹配授權規則，數學上證明 100% 絕不存取未經 HardwareRouter 授權的敏感資源。
 // - 電氣電流保護證明（Current Draw Safety Proof）：透過對 PWM 脈寬調製（SetPwm, AvoidResonance, SpectrumAdaptive）所代表的電機電流消耗進行累加與峰值仿真，證明最大電流指標絕不超出硬件熱極限與配電保險上限。
 // - 條件編譯封離：此龐大數學驗證器與報告生成模組完全基於 `verifier` 條件編譯特徵，絕不併入裸機韌體，只在伺服器端與上位機編譯，達成零 MCU 開銷。
+//
+// ============================================================
+// 24. 空間共識協定防物理作弊 (Spatial Consensus Protocol & Anti-Spoofing)
+// ============================================================
+//
+// 針對物理感測器可能遭受之惡意局部物理干擾（例如將高頻振動馬達貼在智慧地釘上模擬土石流前兆）進行空間維度共識防禦：
+// - 局部單點不可信：單一智慧地釘地釘偵測到山體滑坡或異常波形時，不予直接觸發理賠以防止詐保。
+// - 分散式 Gossip 網路宣告：當本地 FFT 頻譜計算之低/中頻震動能量超標時，節點透過 ESP-NOW Gossip 網路以 `OpCode::SpatialGossip` (0x05) 廣播其 MAC、時間戳與局部危險評分。
+// - 鄰近多點關聯斷言（Spatial Consensus Assert）： 透過標準庫指令 `0x87`，僅當節點在指定的時間窗口 `TimeWindow_ms` 內，同時收到來自至少 `K` 個相鄰 unique 智慧地釘節點（其 hazard_score 均高於 `HighThreshold`）的相符宣告時，才判定為真實物理滑坡災害，並立刻進行 Safe Shutdown 與廣播 `OpCode::Exception` 以向 Oracle 觸發自動理賠。
+// - 時間主動剪枝：`TinyNode` 在 tick() 中會自動對 Gossip 快取中超過 5 秒 (`5,000,000` 微秒) 的過期物理斷言進行主動剪枝與清除，以保證關聯性的微秒級時間精度。
