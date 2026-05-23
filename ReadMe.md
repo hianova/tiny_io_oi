@@ -190,4 +190,4 @@ espflash flash target/riscv32imac-unknown-none-elf/release/esp32_firmware --moni
 ---
 
 ## 📄 License
-Licensed under the [PolyForm Noncommercial License 1.0.0](./PolyForm-Noncommercial-1.0.0.txt). For commercial usage or custom swarms, please contact the development team.
+Licensed under the [PolyForm-Noncommercial-1.0.0](PolyForm-Noncommercial-1.0.0.txt). For commercial usage or custom swarms, please contact the development team.

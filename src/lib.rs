@@ -7,6 +7,9 @@ pub mod vm;
 pub mod node;
 pub mod gateway;
 
+#[cfg(feature = "std")]
+pub mod ffi;
+
 pub use tiny_io_oi_macros::io_oi_node;
 
 extern crate alloc;
@@ -623,5 +626,66 @@ mod tests {
         
         assert_eq!(node.get_leader(), Some(leader_c));
         assert!(!node.safe_mode);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_ffi_script_builder_and_fft() {
+        use crate::ffi::*;
+
+        // 1. Test Script Builder FFI
+        let builder = create_script_builder();
+        assert!(!builder.is_null());
+
+        script_builder_add_pwm(builder, 1, 128);
+        script_builder_add_delay(builder, 50);
+        script_builder_add_assert(builder, 5, 1);
+
+        let mut out_len = 0u32;
+        let ptr = script_builder_serialize(builder, &mut out_len as *mut u32);
+        assert!(!ptr.is_null());
+        assert!(out_len > 0);
+
+        // Deserialize to verify
+        let slice = unsafe { std::slice::from_raw_parts(ptr, out_len as usize) };
+        let archived = rkyv::check_archived_root::<VmScript>(slice).unwrap();
+        assert_eq!(archived.steps.len(), 3);
+        
+        match &archived.steps[0] {
+            io_oi_core::ArchivedVmStep::SetPwm { channel, speed } => {
+                assert_eq!(*channel, 1);
+                assert_eq!(*speed, 128);
+            }
+            _ => panic!("Expected SetPwm"),
+        }
+
+        free_serialized_bytes(ptr, out_len);
+        script_builder_free(builder);
+
+        // 2. Test FFT FFI
+        // Input: 10Hz sine wave sampled at 100Hz
+        // Length must be a power of 2, let's use 128
+        let n = 128;
+        let sample_rate = 100.0f32;
+        let freq = 10.0f32;
+        let mut input = vec![0.0f32; n];
+        for i in 0..n {
+            let t = i as f32 / sample_rate;
+            input[i] = (2.0f32 * std::f32::consts::PI * freq * t).sin();
+        }
+
+        let mut output_mag = vec![0.0f32; n / 2];
+        let peak_freq = rust_fft(
+            input.as_ptr(),
+            n as u32,
+            sample_rate,
+            output_mag.as_mut_ptr(),
+        );
+
+        // Peak frequency should be extremely close to 10Hz
+        assert!((peak_freq - 10.0).abs() < 1.0);
+        // Magnitude at the peak index should be significantly high
+        let peak_index = (10.0 / (sample_rate / n as f32)).round() as usize;
+        assert!(output_mag[peak_index] > 10.0);
     }
 }
