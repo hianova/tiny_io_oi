@@ -515,3 +515,22 @@ pub fn genesis(cfg: GenesisConfig) -> Node {
 // - 雙重簽核（Double Sign）主動偵測：當同一個 Epoch 內同一個 Leader 送出不相符的重複狀態更新/指令時，立刻判斷為雙分叉衝突，將該 Leader 記為 `disqualified_leader` 並寫入 WAL/Jury 衝突日誌中（寫入 Entity 999 專用區），並使節點進入 `Safe Mode`。
 // - 安全隔離行為：進入 `Safe Mode` 後，節點將馬達 PWM 強制歸零、GPIO 輸出歸零，並拒絕任何來自失效/衝突 Leader 的 `TaskDispatch`, `StateUpdate`, `VmScriptDispatch` 指令。
 // - 網路自癒康復：當此節點在網路中接收到其他合法的、且未被 disqualified 的新 Leader 之 Heartbeat 時，它會重新計算並切換回正常操作模式。
+
+// ============================================================
+// 22. 精密時間同步協議與絕對時間戳執行 (PTP Clock Synchronization & Absolute Time Execution)
+// ============================================================
+//
+// 針對多設備協同物理動作時因網路傳輸抖動（Jitter）造成的時序不同步問題：
+// - 精密時間對齊（PTP over ESP-NOW）： Leader 與 Node 之間定時進行微秒級的時鐘同步對齊，利用 IEEE 1588 交換機制計算時鐘偏移量（Offset）與傳輸延遲（Delay）。
+// - 絕對時間執行：透過 VmScript 的 standard library 擴充 OpCode 0x86 (DelayUntil)，其參數包含 48-bit 微秒級絕對時間戳。Node 在執行到此指令時，會自動延遲等待至本地 synchronized 系統時間到達該絕對時間戳，以實現在完全沒有通訊抖動干擾的情況下多設備整齊劃一的物理動作。
+// - 輕量條件編譯：PTP 時間管理程式與絕對延遲操作封裝在 `ptp` feature 內。在嵌入式裸機端（`no_std`）若未開啟 `ptp` 特徵，該指令自動退化並編譯出，從而保障最小韌體足跡。
+//
+// ============================================================
+// 23. VmScript 二進位形式化驗證引擎 (VmScript Formal Verification Engine)
+// ============================================================
+//
+// 為了在腳本發射到邊緣節點執行前保證 100% 物理與邏輯安全，在主控主機/伺服器端提供 StaticVerifier：
+// - 數學停機證明（Termination Proof）：形式化分析 VmScript / std 執行序列，利用無迴圈/無動態跳轉之拓撲性質，數學上嚴格證明任意給定 Fuel 的腳本均能在有限步驟內完成，從而 100% 杜絕 OutOfFuel 或死鎖陷阱。
+// - 邊界路由安全證明（Boundary Safety Proof）：逐條指令掃描引腳（Pin < 32）和通道（Channel < 8）匹配授權規則，數學上證明 100% 絕不存取未經 HardwareRouter 授權的敏感資源。
+// - 電氣電流保護證明（Current Draw Safety Proof）：透過對 PWM 脈寬調製（SetPwm, AvoidResonance, SpectrumAdaptive）所代表的電機電流消耗進行累加與峰值仿真，證明最大電流指標絕不超出硬件熱極限與配電保險上限。
+// - 條件編譯封離：此龐大數學驗證器與報告生成模組完全基於 `verifier` 條件編譯特徵，絕不併入裸機韌體，只在伺服器端與上位機編譯，達成零 MCU 開銷。

@@ -9,6 +9,8 @@ pub enum StdOpCode {
     MultiBandAssert = 0x83,
     SpectrumAdaptive = 0x84,
     EnvelopeCheck   = 0x85,
+    #[cfg(feature = "ptp")]
+    DelayUntil      = 0x86,
 }
 
 /// A structure to hold static/stack complex values during FFT computation.
@@ -270,6 +272,22 @@ impl StdExecutor {
                 } else if low_energy > low_threshold {
                     // Low-freq load imbalance -> Limit max speed to 70%
                     motor.set_speed(70);
+                }
+            }
+
+            // ==========================================
+            // 0x86: DelayUntil (精密時間同步絕對時間戳執行)
+            // ==========================================
+            #[cfg(feature = "ptp")]
+            0x86 => {
+                let target_us = ((param_a as u64) << 32) | (param_b as u64);
+                loop {
+                    let current = crate::ptp::PTP_CLOCK.lock().get_time_us();
+                    if current >= target_us {
+                        break;
+                    }
+                    #[cfg(feature = "std")]
+                    std::thread::yield_now();
                 }
             }
 

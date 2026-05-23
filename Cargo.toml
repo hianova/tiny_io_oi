@@ -19,7 +19,9 @@ num-complex = { version = "0.4", default-features = false, optional = true }
 libm = "0.2"
 
 [features]
-default = ["std"]
+default = ["std", "ptp", "verifier"]
 std = ["rustfft", "num-complex"]
 tiny-node = []
+ptp = []
+verifier = []
 

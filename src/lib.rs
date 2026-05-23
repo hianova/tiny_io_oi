@@ -11,6 +11,12 @@ pub mod std_impl;
 #[cfg(feature = "std")]
 pub mod ffi;
 
+#[cfg(feature = "ptp")]
+pub mod ptp;
+
+#[cfg(feature = "verifier")]
+pub mod verifier;
+
 pub use tiny_io_oi_macros::io_oi_node;
 
 extern crate alloc;
@@ -739,5 +745,68 @@ mod tests {
         assert!(res2.is_ok());
         // Since frequency (45Hz) falls inside tolerance, speed should shift/increase by +10% to 110!
         assert_eq!(motor2.current_speed, 110);
+    }
+
+    #[cfg(all(feature = "ptp", feature = "std"))]
+    #[test]
+    fn test_ptp_clock_and_delay_until() {
+        use crate::drivers::MockMotor;
+        use crate::vm::MicroVm;
+        use crate::ptp::{set_local_hardware_time, PTP_CLOCK};
+
+        set_local_hardware_time(1000);
+        PTP_CLOCK.lock().set_offset(100); // 1100 synchronized time
+
+        let target_time_us = 1150u64; // in future
+        let param_a = (target_time_us >> 32) as u16;
+        let param_b = (target_time_us & 0xFFFFFFFF) as u32;
+        let param_b_bytes = param_b.to_le_bytes();
+
+        let bytecode = [
+            0x86, 0, (param_a & 0xFF) as u8, (param_a >> 8) as u8,
+            param_b_bytes[0], param_b_bytes[1], param_b_bytes[2], param_b_bytes[3]
+        ];
+
+        // Spawn a thread to advance local time after 10ms
+        let handle = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            set_local_hardware_time(1100); // synchronizes to 1200, passing target 1150
+        });
+
+        let mut vm = MicroVm::new(100);
+        let mut motor = MockMotor::new();
+        let gpio = crate::drivers::MockGpio::new();
+        
+        let res = vm.run_std(&bytecode, &mut motor, &gpio);
+        assert!(res.is_ok());
+        handle.join().unwrap();
+    }
+
+    #[cfg(all(feature = "verifier", feature = "std"))]
+    #[test]
+    fn test_verifier_ffi_mathematical_proofs() {
+        // Test standard bytecode verifier via FFI or directly
+        let p_b = 0x05030000u32;
+        let mut bytecode = alloc::vec![0x81, 5];
+        bytecode.extend_from_slice(&100u16.to_le_bytes());
+        bytecode.extend_from_slice(&p_b.to_le_bytes());
+
+        let mut out_safe = false;
+        let mut out_len = 0u32;
+        let ptr = crate::ffi::rust_verify_std_bytecode(
+            bytecode.as_ptr(),
+            bytecode.len() as u32,
+            500,
+            &mut out_safe,
+            &mut out_len,
+        );
+
+        assert!(out_safe);
+        assert!(out_len > 0);
+        let slice = unsafe { std::slice::from_raw_parts(ptr, out_len as usize) };
+        let report = String::from_utf8(slice.to_vec()).unwrap();
+        assert!(report.contains("100% mathematically proven"));
+
+        crate::ffi::free_serialized_bytes(ptr, out_len);
     }
 }

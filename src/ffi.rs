@@ -171,3 +171,66 @@ pub extern "C" fn run_standard_bytecode(
         }
     }
 }
+
+#[cfg(feature = "verifier")]
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_verify_std_bytecode(
+    bytecode_ptr: *const u8,
+    bytecode_len: u32,
+    max_current_limit: u32,
+    out_safe: *mut bool,
+    out_report_len: *mut u32,
+) -> *mut u8 {
+    if bytecode_ptr.is_null() || bytecode_len == 0 || out_report_len.is_null() || out_safe.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let bytecode = unsafe { std::slice::from_raw_parts(bytecode_ptr, bytecode_len as usize) };
+    let result = crate::verifier::StaticVerifier::verify_std_bytecode(bytecode, max_current_limit);
+
+    unsafe { *out_safe = result.safe };
+
+    let mut report_bytes = result.report.into_bytes();
+    let len = report_bytes.len() as u32;
+    unsafe { *out_report_len = len };
+
+    let ptr = report_bytes.as_mut_ptr();
+    std::mem::forget(report_bytes); // transfer ownership to the caller
+    ptr
+}
+
+#[cfg(feature = "verifier")]
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_verify_vm_script_bytecode(
+    bytecode_ptr: *const u8,
+    bytecode_len: u32,
+    max_current_limit: u32,
+    out_safe: *mut bool,
+    out_report_len: *mut u32,
+) -> *mut u8 {
+    if bytecode_ptr.is_null() || bytecode_len == 0 || out_report_len.is_null() || out_safe.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let bytecode = unsafe { std::slice::from_raw_parts(bytecode_ptr, bytecode_len as usize) };
+    
+    // Check archived root VmScript
+    if let Ok(archived) = rkyv::check_archived_root::<crate::VmScript>(bytecode) {
+        let result = crate::verifier::StaticVerifier::verify_vm_script(archived, max_current_limit);
+        unsafe { *out_safe = result.safe };
+
+        let mut report_bytes = result.report.into_bytes();
+        let len = report_bytes.len() as u32;
+        unsafe { *out_report_len = len };
+
+        let ptr = report_bytes.as_mut_ptr();
+        std::mem::forget(report_bytes); // transfer ownership to the caller
+        ptr
+    } else {
+        unsafe { 
+            *out_safe = false;
+            *out_report_len = 0;
+        }
+        std::ptr::null_mut()
+    }
+}
