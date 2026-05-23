@@ -90,7 +90,10 @@ pub fn io_oi_node(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let pwm_routing = quote! {
         match *channel {
             #(#pwm_branches)*
-            _ => {}
+            _ => {
+                #safe_shutdown
+                return Err(crate::VmError::UnauthorizedAccess);
+            }
         }
     };
 
@@ -99,6 +102,7 @@ pub fn io_oi_node(_attr: TokenStream, item: TokenStream) -> TokenStream {
     for (field_name, ch) in &gpio_fields {
         gpio_branches.push(quote! {
             if *pin == #ch {
+                authorized = true;
                 let actual = self.#field_name.read_pin(*pin);
                 if actual != *expected {
                     #safe_shutdown
@@ -113,7 +117,12 @@ pub fn io_oi_node(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     let gpio_routing = quote! {
+        let mut authorized = false;
         #(#gpio_branches)*
+        if !authorized {
+            #safe_shutdown
+            return Err(crate::VmError::UnauthorizedAccess);
+        }
     };
 
     // We strip the #[bind(...)] helper attribute from the struct fields

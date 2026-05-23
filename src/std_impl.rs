@@ -193,7 +193,10 @@ impl StdExecutor {
             0x81 => {
                 let resonance_hz = param_a;
                 let tolerance_hz = (param_b >> 24) as u16;
-                let _motor_channel = ((param_b >> 16) & 0xFF) as u8;
+                let motor_channel = ((param_b >> 16) & 0xFF) as u8;
+                if motor_channel >= 8 {
+                    return Err(VmError::UnauthorizedAccess);
+                }
 
                 let (peak_hz, _) = local_fixed_fft(&raw_samples, sample_rate);
                 let diff = (peak_hz as i32 - resonance_hz as i32).abs() as u16;
@@ -245,8 +248,11 @@ impl StdExecutor {
             // 0x84: SpectrumAdaptive (頻譜自適應多段控制)
             // ==========================================
             0x84 => {
-                let _motor_channel = (param_a >> 8) as u8;
+                let motor_channel = (param_a >> 8) as u8;
                 let _tolerance_hz = (param_a & 0xFF) as u16;
+                if motor_channel >= 8 {
+                    return Err(VmError::UnauthorizedAccess);
+                }
                 let low_threshold = (param_b >> 16) as u16;
                 let mid_threshold = (param_b & 0xFFFF) as u16;
 

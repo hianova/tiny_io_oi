@@ -1,4 +1,4 @@
-import { TinyNode, TinyScriptBuilder, LogicOp, Band, symbols } from "./index";
+import { TinyNode, TinyScriptBuilder, ScriptBuilder, LogicOp, Band, StaticVerifier, symbols } from "./index";
 import { fft } from "./dsp";
 
 console.log("⚡ Starting Bun FFI Bindings Integration Verification...");
@@ -111,6 +111,38 @@ console.log(`  ✓ Motor Speed: ${finalSpeedB} (Expected: 0 - emergency Safe Shu
 
 if (statusB !== 2 || finalSpeedB !== 0) {
   throw new Error(`Case B failed: status=${statusB}, speed=${finalSpeedB}`);
+}
+
+// =========================================================================
+// 4. Verify Linter Linters & Formal Verifier
+// =========================================================================
+console.log("\n[Test 4] Testing Bun-Side Linters & Static Formal Verifier...");
+
+// A. Test Co-occurrence / Coupling Linter
+console.log("  Testing P(delay|setPwm) Coupling Linter...");
+const builderL = new ScriptBuilder();
+builderL.setPwm(1, 200).delay(10)
+        .setPwm(1, 100).delay(10)
+        .setPwm(1, 0).delay(10);
+builderL.serialize(); // Trigger linter coupling warning!
+builderL.free();
+
+// B. Test 20-Instruction Safety Boundary Linter
+console.log("  Testing 20-Instruction Physical Safety Boundary Linter...");
+const builderSize = new ScriptBuilder();
+for (let i = 0; i < 22; i++) {
+  builderSize.setPwm(1, 100);
+}
+builderSize.serialize(); // Trigger size warning!
+builderSize.free();
+
+// C. Test Static Formal Verification
+console.log("  Testing Mathematical Formal Verifier...");
+const verResult = StaticVerifier.verify(stdBytecode, true);
+console.log(verResult.report);
+
+if (!verResult.safe) {
+  throw new Error("Formal verifier reported safe script as UNSAFE!");
 }
 
 console.log("\n🎉 ALL Bun FFI integration tests passed successfully!");

@@ -10,6 +10,7 @@ pub enum VmError {
     AcousticFailureDetected,
     EnvelopeViolation,
     InvalidStdOpCode,
+    UnauthorizedAccess,
 }
 
 pub struct MicroVm {
@@ -40,7 +41,11 @@ impl MicroVm {
             self.fuel -= 1;
 
             match step {
-                ArchivedVmStep::SetPwm { channel: _, speed } => {
+                ArchivedVmStep::SetPwm { channel, speed } => {
+                    if *channel >= 8 {
+                        self.trap_reason = Some(VmError::UnauthorizedAccess);
+                        return Err(VmError::UnauthorizedAccess);
+                    }
                     motor.set_speed(*speed);
                 }
                 ArchivedVmStep::Delay { ticks } => {
@@ -48,6 +53,10 @@ impl MicroVm {
                     self.fuel -= cost;
                 }
                 ArchivedVmStep::AssertOrYield { pin, expected } => {
+                    if *pin >= 32 {
+                        self.trap_reason = Some(VmError::UnauthorizedAccess);
+                        return Err(VmError::UnauthorizedAccess);
+                    }
                     let actual = gpio.read_pin(*pin);
                     if actual != *expected {
                         let err = VmError::AssertionFailed {
@@ -81,6 +90,10 @@ impl MicroVm {
 
             let opcode = bytecode[offset];
             let pin = bytecode[offset + 1];
+            if pin >= 32 {
+                self.trap_reason = Some(VmError::UnauthorizedAccess);
+                return Err(VmError::UnauthorizedAccess);
+            }
             let param_a = u16::from_le_bytes([bytecode[offset + 2], bytecode[offset + 3]]);
             let param_b = u32::from_le_bytes([
                 bytecode[offset + 4],
