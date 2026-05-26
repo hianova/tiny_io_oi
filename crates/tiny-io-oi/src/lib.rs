@@ -7,7 +7,7 @@ pub mod vm;
 pub mod node;
 pub mod gateway;
 pub mod std_impl;
-
+pub mod unsafe_core;
 #[cfg(feature = "ptp")]
 pub mod ptp;
 
@@ -113,7 +113,7 @@ pub mod sync {
 }
 
 /// 全域的靜態 Arena，消滅記憶體碎片化
-#[cfg(feature = "tiny-node")]
+#[cfg(all(feature = "tiny-node", not(feature = "loom")))]
 pub static GLOBAL_ARENA: memory::Arena<[u8; 32], 256> = memory::Arena::new();
 
 #[cfg(test)]
@@ -401,7 +401,7 @@ mod tests {
         use alloc::string::ToString;
 
         let fs = Arc::new(FlashFileSystem::new());
-        let wal = cdDB::StdWal::new("test_wal.log".to_string(), fs.clone());
+        let wal = cdDB::StdWal::new("test_wal.log".to_string(), fs.clone(), Default::default());
 
         let mut node = TinyNode::<_, _, MockState, MockGpio, 2>::new(
             [0; 6],
@@ -420,7 +420,7 @@ mod tests {
         assert_eq!(node.state.flags, 5);
 
         // 模擬斷電重啟：建立一個新的節點，並共享同一個虛擬 Flash 檔案系統
-        let wal_restart = cdDB::StdWal::new("test_wal.log".to_string(), fs);
+        let wal_restart = cdDB::StdWal::new("test_wal.log".to_string(), fs, Default::default());
         let mut node_restart = TinyNode::<_, _, MockState, MockGpio, 2>::new(
             [0; 6],
             MockNetwork::new(),
@@ -440,6 +440,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "loom"))]
     fn test_no_std_memory_leak_and_thread_drop() {
         use crate::memory::Arena;
         use std::thread;

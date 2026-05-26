@@ -6,13 +6,9 @@ pub static PTP_CLOCK: Mutex<PtpClock> = Mutex::new(PtpClock::new());
 /// Platform time provider in microseconds.
 /// In a standard environment, uses SystemTime.
 /// In no_std environment, uses a static hardware clock updated by the driver or mock.
-static mut LOCAL_HARDWARE_TIME_US: u64 = 0;
-
 /// Set the local hardware time in microseconds. Can be called from ESP32 timer ISR/tick loops.
 pub fn set_local_hardware_time(us: u64) {
-    unsafe {
-        LOCAL_HARDWARE_TIME_US = us;
-    }
+    crate::unsafe_core::HardwareTime::set_us(us);
 }
 
 /// Precise Time Protocol Clock.
@@ -48,7 +44,7 @@ impl PtpClock {
         }
         #[cfg(not(feature = "std"))]
         {
-            unsafe { (LOCAL_HARDWARE_TIME_US as i64 + self.offset_us) as u64 }
+            (crate::unsafe_core::HardwareTime::get_us() as i64 + self.offset_us) as u64
         }
     }
 }

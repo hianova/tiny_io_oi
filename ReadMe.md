@@ -140,6 +140,9 @@ Verify that all unit and integration tests (including the lock-free multi-thread
 # Check dependencies and settings inside Cargo.toml
 # Then run the entire test suite
 cargo test --workspace
+
+# Run lock-free concurrency model checking
+cargo test --features loom
 ```
 
 ---

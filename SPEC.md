@@ -29,8 +29,8 @@ pub type Sequence    = u64;
 // 0.5 專案子目錄與功能 (Project Structure)
 // ============================================================
 //
-// - core:  定義核心資料結構、OpCode 指令集與 DualCacheFF 介面。不含 I/O 與網路。
-// - node:  實作 Iroh P2P 通訊、RESP 閘道、WASM 載入與 Record 同步邏輯。
+// - core:  定義核心資料結構、OpCode 指令集與 DualCacheFF 介面。純粹的邏輯與資料定義，不含 serde、I/O 與網路。
+// - node:  實作 Iroh P2P 通訊、RESP 閘道、WASM 載入與 DualCacheFF 節點狀態維護。
 // - cli:   提供創世啟動、節點加入與自然語言交互介面。
 // - wasm:  定義仲裁合約的 WIT 介面與合約編譯環境。
 //
@@ -544,3 +544,16 @@ pub fn genesis(cfg: GenesisConfig) -> Node {
 // - 分散式 Gossip 網路宣告：當本地 FFT 頻譜計算之低/中頻震動能量超標時，節點透過 ESP-NOW Gossip 網路以 `OpCode::SpatialGossip` (0x05) 廣播其 MAC、時間戳與局部危險評分。
 // - 鄰近多點關聯斷言（Spatial Consensus Assert）： 透過標準庫指令 `0x87`，僅當節點在指定的時間窗口 `TimeWindow_ms` 內，同時收到來自至少 `K` 個相鄰 unique 智慧地釘節點（其 hazard_score 均高於 `HighThreshold`）的相符宣告時，才判定為真實物理滑坡災害，並立刻進行 Safe Shutdown 與廣播 `OpCode::Exception` 以向 Oracle 觸發自動理賠。
 // - 時間主動剪枝：`TinyNode` 在 tick() 中會自動對 Gossip 快取中超過 5 秒 (`5,000,000` 微秒) 的過期物理斷言進行主動剪枝與清除，以保證關聯性的微秒級時間精度。
+
+// ============================================================
+// 25. 標準庫指令集 (Standard Library Opcodes)
+// ============================================================
+//
+// VmScript 除了基礎控制流外，更提供一系列高度優化的標準庫指令，用於邊緣運算與物理斷言：
+//
+// - AssertVibration (0x80): 擷取指定窗口的感測器資料，計算 FFT 頻譜並斷言高頻振動能量是否低於閾值。若不符則觸發 Exception。
+// - AvoidResonance (0x81): 當偵測到機械共振頻率時，主動改變馬達 PWM 輸出頻率或避開特定頻段，以防硬體損壞。
+// - SpectrumAdaptive (0x82): 基於持續的頻譜分析，自適應地調整控制參數（如 PID 常數或濾波器截止頻率）。
+// - MultiBandAssert (0x83): 針對多個不同的頻段（如低頻滑坡特徵與高頻機具特徵）同時進行斷言，為「智慧地釘」災害防護提供精確判定。
+// - DelayUntil (0x86): 基於 PTP 微秒時鐘的絕對時間延遲，確保多設備的協同動作在同一微秒級瞬間精確觸發。
+// - SpatialConsensusAssert (0x87): 聚合周圍實體節點的 Gossip 訊號，若滿足 K 個鄰居的危險宣告，才觸發共識等級的異常事件。

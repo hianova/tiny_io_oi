@@ -11,16 +11,19 @@ io_oi_core = { version = "0.2.1", path = "../../../io_oi/core", default-features
 rkyv = { workspace = true }
 bytecheck = { workspace = true }
 tiny_io_oi_macros = { path = "../tiny-io-oi-macros" }
-cdDB = { version = "0.2.3", path = "../../../cdDB", default-features = false }
+cdDB = { version = "0.3.0", path = "../../../cdDB", default-features = false }
 spin = { workspace = true }
 rustfft = { version = "6.2", optional = true }
 num-complex = { version = "0.4", default-features = false, optional = true }
 libm = { workspace = true }
 heapless = { workspace = true }
+ahash = { version = "0.8", default-features = false, features = ["compile-time-rng"] }
+loom = { version = "0.7", optional = true }
 
 [features]
 default = ["std", "ptp", "verifier"]
-std = ["rustfft", "num-complex"]
+std = ["rustfft", "num-complex", "ahash/std"]
+loom = ["dep:loom"]
 tiny-node = []
 ptp = []
 verifier = []
