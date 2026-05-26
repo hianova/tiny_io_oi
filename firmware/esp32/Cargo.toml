@@ -10,7 +10,7 @@ esp-backtrace = { version = "0.15.0", features = [
     "panic-handler",
     "println",
 ], default-features = false }
-esp-println = { version = "0.13.0", features = ["esp32c6", "jtag-serial"], default-features = false }
+esp-println = { version = "0.13.0", features = ["esp32c6", "auto"], default-features = false }
 esp-bootloader-esp-idf = "0.1.0"
 esp-alloc = { version = "0.8.0" }
 esp-wifi = { version = "0.15.1", features = ["esp32c6", "esp-now", "wifi"] }

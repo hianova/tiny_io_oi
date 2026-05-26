@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "io_oi_core"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "bytecheck",
  "ed25519-dalek",

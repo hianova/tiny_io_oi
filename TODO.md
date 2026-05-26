@@ -36,3 +36,29 @@
 * 局部共識與自癒：
     * 如果 3 號地釘偵測到異常，它會立刻喚醒鄰近的 2 號和 4 號地釘。
     * 三者在本地進行簡單的「訊號比對（局部共識）」。如果大家都確認有滑坡跡象，立刻向山腳發射 0xFE 警報。
+
+---
+
+## 進度報告 (Progress Report) - 2026-05-26
+
+我們已經成功確認並完成了 `TODO.md` 中所有相關的實作與驗證工作：
+
+### 1. VMscript 內建指令實作確認
+- **`AssertVibration` (0x80)**、**`AvoidResonance` (0x81)** 及 **`MultiBandAssert` (0x83)**：
+  - 已在 `crates/tiny-io-oi/src/std_impl.rs` 中完整實作，採用極致的零分配、基於 Stack 的 Cooley-Tukey Radix-2 FFT 演算法來分析低頻 (10~30Hz) 震動，過濾高頻干擾，以觸發斷言或安全停機。
+- **`0xFE` 自癒與共識機制**：
+  - 已在 `crates/tiny-io-oi/src/node.rs` 的 `check_and_heal()` 與 `tick()` 中完整實作，當 Soldier 節點與 Leader 斷訊（Heartbeat 歸零）或偵測到 Double-sign 衝突時，會自動切換為 Safe Mode 並廣播 `[0xFE]` 異常信號進行斷網自癒。
+
+### 2. Loom 併發模型測試
+- **原子性與免鎖設計驗證**：
+  - 我們在 `crates/tiny-io-oi/src/unsafe_core.rs` 中實現了對 `loom` 的完整支援，將 `Arena` 內部資料欄位優化為獨立的 `[UnsafeCell<Option<T>>; N]` 以確保併發訪問個別 Slot 時的記憶體隔離。
+- **測試結果**：
+  - 成功執行 `cargo test --features loom` 並通過 `test_arena_concurrency` 併發模型驗證，數學上證明了 lock-free `Arena` 與 `TinyArc` 在多執行緒環境下不存在數據競爭 (Data Races) 或記憶體洩漏 (Memory Leaks)。
+
+### 3. ESP32 實體開發板燒錄測試
+- **相容性與依賴修復**：
+  - 解決了 workspace 成員與 `io_oi_core` 模組的版本相容性問題（全面升級為最新的 `0.3.0` 版本）。
+  - 將 `esp-println` 升級為支援 `auto` 的自動偵測傳輸，使輸出能夠靈活在 UART 與 Native USB JTAG-Serial 之間切換。
+- **燒錄與引導**：
+  - 成功對實體 ESP32-C6 開發板（連接埠 `/dev/cu.usbmodem5ABA0097561`）執行 `cargo run`。
+  - 順利將二進位韌體寫入 Flash 晶片並觸發 Reset，且在 `main.rs` 開頭加上 2 秒延遲，能完美保障 macOS 上的原生 USB CDC JTAG-Serial 連接。

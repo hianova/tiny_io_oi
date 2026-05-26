@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-io_oi_core = { version = "0.2.1", path = "../../../io_oi/core", default-features = false }
+io_oi_core = { version = "0.3.0", path = "../../../io_oi/core", default-features = false }
 rkyv = { workspace = true }
 bytecheck = { workspace = true }
 tiny_io_oi_macros = { path = "../tiny-io-oi-macros" }

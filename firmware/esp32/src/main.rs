@@ -208,10 +208,12 @@ impl<'a> DigitalOutput for EspPin<'a> {
 
 #[esp_hal::main]
 fn main() -> ! {
-    esp_alloc::heap_allocator!(size: 131_072);
-
     let peripherals = esp_hal::init(esp_hal::Config::default());
-    let _clocks = esp_hal::clock::Clocks::get();
+    let delay = Delay::new();
+    delay.delay_millis(2000);
+
+    esp_println::println!("DEBUG: ESP32 main starting after 2s USB reconnection delay...");
+    esp_alloc::heap_allocator!(size: 131_072);
 
     // Initialize esp-wifi stack
     let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
@@ -228,7 +230,7 @@ fn main() -> ! {
     let esp_now = interfaces.esp_now;
     let network = EspNowNetwork { esp_now };
 
-    let delay = Delay::new();
+
 
     #[cfg(feature = "gateway")]
     {
