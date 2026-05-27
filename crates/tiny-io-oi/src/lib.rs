@@ -86,6 +86,10 @@ pub trait Uart {
 pub trait Motor {
     fn set_speed(&mut self, speed: u8);
     fn stop(&mut self);
+    fn fade_to(&mut self, channel: u8, target_duty: u8, fade_ms: u16) {
+        let _ = (channel, fade_ms);
+        self.set_speed(target_duty);
+    }
 }
 
 /// Hardware abstraction for GPIO inputs.

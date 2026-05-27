@@ -4,6 +4,7 @@ members = [
     "crates/tiny-io-oi-macros",
     "crates/tiny-io-oi-host",
     "crates/tiny-io-oi-tools",
+    "smart_geopin_roadshow/smart_geopin_ui",
 ]
 
 exclude = [

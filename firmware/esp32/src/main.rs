@@ -53,6 +53,14 @@ impl Gpio for EspGpio {
 
 impl tiny_io_oi::Adc for EspGpio {
     fn read_adc_buffer(&self, _pin: u8, buffer: &mut [i16]) {
+        #[cfg(feature = "roadshow")]
+        {
+            if !TRIGGER_VIBRATION.load(core::sync::atomic::Ordering::Relaxed) {
+                for b in buffer.iter_mut() { *b = 0; }
+                return;
+            }
+        }
+
         // Landslide prelude: 20Hz low-frequency deep vibration waves
         let sample_rate = 1000.0f32;
         let freq = 20.0f32;
@@ -63,6 +71,9 @@ impl tiny_io_oi::Adc for EspGpio {
         }
     }
 }
+
+#[cfg(feature = "roadshow")]
+static TRIGGER_VIBRATION: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 struct EspUart<'a> {
     uart: esp_hal::uart::Uart<'a, esp_hal::Blocking>,
@@ -263,15 +274,23 @@ fn main() -> ! {
     {
         // Soldier Node role (either explicit feature soldier, or fallback)
         let led = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
+        
+        #[cfg(not(feature = "roadshow"))]
         let extra_pin = Output::new(peripherals.GPIO9, Level::Low, OutputConfig::default());
+        
+        #[cfg(feature = "roadshow")]
+        let mut boot_button = esp_hal::gpio::Input::new(peripherals.GPIO9, esp_hal::gpio::InputConfig::default().with_pull(esp_hal::gpio::Pull::Up));
 
         let motor = EspMotor { led_pin: led };
         let gpio = EspGpio;
 
         let mut router = HardwareRouter::<EspPin, EspMotor, 2>::new();
-        let dig_pin = EspPin { pin: extra_pin };
-
-        let _ = router.bind_digital(3, dig_pin);
+        
+        #[cfg(not(feature = "roadshow"))]
+        {
+            let dig_pin = EspPin { pin: extra_pin };
+            let _ = router.bind_digital(3, dig_pin);
+        }
 
         // Soldier A node MAC address
         let my_mac = [0x02, 0x02, 0x02, 0x02, 0x02, 0x02];
@@ -296,6 +315,15 @@ fn main() -> ! {
 
         let mut tick_cnt = 0;
         loop {
+            #[cfg(feature = "roadshow")]
+            {
+                if boot_button.is_low() {
+                    let was_triggered = TRIGGER_VIBRATION.swap(true, core::sync::atomic::Ordering::Relaxed);
+                    if !was_triggered {
+                        esp_println::println!("🚨 [ROADSHOW] BOOT Button Pressed! Simulating 20Hz vibration...");
+                    }
+                }
+            }
             node.tick();
             
             tick_cnt += 1;

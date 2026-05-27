@@ -162,8 +162,8 @@ impl StaticVerifier {
                 bytecode[offset + 7],
             ]);
 
-            // Validate opcode is within known standard library range [0x80..=0x86]
-            if opcode < 0x80 || opcode > 0x86 {
+            // Validate opcode is within known standard library range [0x80..=0x8C]
+            if opcode < 0x80 || opcode > 0x8C {
                 safe = false;
                 op_violations += 1;
                 report.push_str(&alloc::format!(
@@ -208,6 +208,19 @@ impl StaticVerifier {
                 }
             }
 
+            // ClosedLoopPID has motor channel at param_b & 0xFF
+            if opcode == 0x8A {
+                let motor_channel = (param_b & 0xFF) as u8;
+                if motor_channel >= 8 {
+                    safe = false;
+                    pin_violations += 1;
+                    report.push_str(&alloc::format!(
+                        "❌ Channel Boundary Violation: Step {} attempts to write unmapped PWM channel {}\n",
+                        step_idx, motor_channel
+                    ));
+                }
+            }
+
             offset += 8;
             step_idx += 1;
         }
@@ -237,6 +250,18 @@ impl StaticVerifier {
                 cumulative_speed += 115;
                 if 115 > peak_speed {
                     peak_speed = 115;
+                }
+            } else if opcode == 0x88 {
+                // fade_to
+                cumulative_speed += 255;
+                if 255 > peak_speed {
+                    peak_speed = 255;
+                }
+            } else if opcode == 0x8A {
+                // ClosedLoopPID can output up to 255 speed
+                cumulative_speed += 255;
+                if 255 > peak_speed {
+                    peak_speed = 255;
                 }
             }
             offset += 8;

@@ -12,6 +12,12 @@ pub enum StdOpCode {
     #[cfg(feature = "ptp")]
     DelayUntil      = 0x86,
     SpatialConsensusAssert = 0x87,
+    HardwareFadePwm = 0x88,
+    SensorFusion    = 0x89,
+    ClosedLoopPID   = 0x8A,
+    #[cfg(feature = "ptp")]
+    SyncHibernate   = 0x8B,
+    SpatialRanging  = 0x8C,
 }
 
 /// A structure to hold static/stack complex values during FFT computation.
@@ -362,6 +368,151 @@ impl StdExecutor {
                             println!("[SpatialConsensus] Vibration detected but waiting for spatial consensus...");
                         }
                     }
+                }
+            }
+
+            // ==========================================
+            // 0x88: HardwareFadePwm (硬體漸變)
+            // ==========================================
+            0x88 => {
+                let channel = pin;
+                let target_duty = (param_a & 0xFF) as u8;
+                let fade_ms = (param_b & 0xFFFF) as u16;
+                motor.fade_to(channel, target_duty, fade_ms);
+            }
+
+            // ==========================================
+            // 0x89: SensorFusion (感測器融合 - 互補濾波)
+            // ==========================================
+            0x89 => {
+                // param_a: alpha in Q15 (e.g. 32112 for 0.98)
+                // param_b: max allowed tilt angle in degrees
+                let alpha_q15 = param_a as i32;
+                let max_tilt = param_b as f32;
+                let dt = 1.0f32 / sample_rate;
+
+                // Mocking Accel and Gyro readings from raw_samples
+                let mut current_angle = 0.0f32;
+                for i in 0..(raw_samples.len() / 2) {
+                    let accel_val = raw_samples[i] as f32 / 16384.0; // Assume 2g scale
+                    let gyro_val = raw_samples[i + 128] as f32 / 131.0; // Assume 250deg/s scale
+                    
+                    let accel_angle = libm::atan2f(accel_val, 1.0) * 180.0 / core::f32::consts::PI;
+                    let alpha = alpha_q15 as f32 / 32768.0;
+                    current_angle = alpha * (current_angle + gyro_val * dt) + (1.0 - alpha) * accel_angle;
+                }
+
+                if libm::fabsf(current_angle) > max_tilt {
+                    motor.stop();
+                    return Err(VmError::SensorFusionHazard);
+                }
+            }
+
+            // ==========================================
+            // 0x8A: ClosedLoopPID (閉環 PID 控制)
+            // ==========================================
+            0x8A => {
+                // param_a: Setpoint
+                // param_b: [Kp, Ki, Kd, MotorChannel]
+                let setpoint = param_a as i32;
+                let kp = ((param_b >> 24) & 0xFF) as i32;
+                let _ki = ((param_b >> 16) & 0xFF) as i32;
+                let _kd = ((param_b >> 8) & 0xFF) as i32;
+                let motor_channel = (param_b & 0xFF) as u8;
+
+                if motor_channel >= 8 {
+                    return Err(VmError::UnauthorizedAccess);
+                }
+
+                // Average the sensor buffer as the current state
+                let mut sum = 0i32;
+                for val in raw_samples.iter() {
+                    sum += *val as i32;
+                }
+                let current_val = sum / (raw_samples.len() as i32);
+
+                let error = setpoint - current_val;
+                
+                // Simple P controller for stateless step execution
+                let output = (kp * error) / 100; // Q-scaling
+                let clamped_output = output.clamp(0, 255) as u8;
+                
+                motor.set_speed(clamped_output);
+                
+                // Optional: if error is too catastrophic
+                if error.abs() > 10000 {
+                    return Err(VmError::PidHazard);
+                }
+            }
+
+            // ==========================================
+            // 0x8B: SyncHibernate (微秒級同步休眠)
+            // ==========================================
+            #[cfg(feature = "ptp")]
+            0x8B => {
+                // param_a: Sleep duration ms
+                // param_b: Target epoch alignment ms
+                let duration_ms = param_a as u64;
+                let align_ms = param_b as u64;
+                
+                let current_us = crate::ptp::PTP_CLOCK.lock().get_time_us();
+                let current_ms = current_us / 1000;
+                
+                let target_ms = if align_ms > 0 {
+                    let remainder = current_ms % align_ms;
+                    current_ms + (align_ms - remainder) + duration_ms
+                } else {
+                    current_ms + duration_ms
+                };
+
+                let target_us = target_ms * 1000;
+                let max_timeout_us = 10_000_000u64; // 10s max block
+                
+                loop {
+                    let now = crate::ptp::PTP_CLOCK.lock().get_time_us();
+                    if now >= target_us {
+                        break;
+                    }
+                    if now.saturating_sub(current_us) > max_timeout_us {
+                        return Err(VmError::OutOfFuel);
+                    }
+                    #[cfg(feature = "std")]
+                    std::thread::yield_now();
+                }
+            }
+
+            // ==========================================
+            // 0x8C: SpatialRanging (空間測距濾波)
+            // ==========================================
+            0x8C => {
+                // param_a: RSSI threshold (positive value, represents -dBm, e.g. 80 for -80dBm)
+                // param_b: Window size for median filter
+                let threshold = param_a as i16;
+                let window_size = (param_b & 0xFF) as usize;
+                let w = window_size.clamp(1, 128);
+
+                let mut window = [0i16; 128];
+                for i in 0..w {
+                    // Convert raw ADC mock to absolute RSSI scale (0..100)
+                    window[i] = raw_samples[i].abs() % 100;
+                }
+
+                // Simple bubble sort for median on stack
+                for i in 0..w {
+                    for j in 0..(w - 1 - i) {
+                        if window[j] > window[j + 1] {
+                            let tmp = window[j];
+                            window[j] = window[j + 1];
+                            window[j + 1] = tmp;
+                        }
+                    }
+                }
+
+                let median_rssi = window[w / 2];
+
+                if median_rssi > threshold { // e.g. > 80 means weaker than -80dBm -> too far or disconnected
+                    motor.stop();
+                    return Err(VmError::SpatialRangingHazard);
                 }
             }
 

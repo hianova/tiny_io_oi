@@ -26,4 +26,5 @@ embedded-io = { version = "0.6.1", default-features = false }
 default = []
 gateway = []
 soldier = []
+roadshow = []
 

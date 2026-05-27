@@ -11,6 +11,9 @@ pub enum VmError {
     EnvelopeViolation,
     InvalidStdOpCode,
     UnauthorizedAccess,
+    SensorFusionHazard,
+    PidHazard,
+    SpatialRangingHazard,
 }
 
 pub struct MicroVm {

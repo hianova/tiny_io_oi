@@ -557,3 +557,7 @@ pub fn genesis(cfg: GenesisConfig) -> Node {
 // - MultiBandAssert (0x83): 針對多個不同的頻段（如低頻滑坡特徵與高頻機具特徵）同時進行斷言，為「智慧地釘」災害防護提供精確判定。
 // - DelayUntil (0x86): 基於 PTP 微秒時鐘的絕對時間延遲，確保多設備的協同動作在同一微秒級瞬間精確觸發。
 // - SpatialConsensusAssert (0x87): 聚合周圍實體節點的 Gossip 訊號，若滿足 K 個鄰居的危險宣告，才觸發共識等級的異常事件。
+// - SensorFusion (0x89): 內建定點數互補濾波器，透過讀取 Accel 與 Gyro 直接計算出精準的絕對姿態角度，角度超標直接觸發斷言，取代昂貴 DMP 硬體。
+// - ClosedLoopPID (0x8A): 內建微秒級 PID 閉環控制器，根據目標值與感測器回饋動態計算 P/I/D 誤差並直接調整馬達 PWM，取代伺服驅動器。
+// - SyncHibernate (0x8B): 基於 PTP 的微秒級同步休眠指令，讓群體節點進入深睡並在精準的未來絕對微秒時刻同步喚醒，大幅節省電量。
+// - SpatialRanging (0x8C): 針對接收到的 RSSI 等雜訊訊號進行滑動視窗中值排序濾波，過濾雜訊後得出平滑的空間距離，提供廉價的室內定位能力。

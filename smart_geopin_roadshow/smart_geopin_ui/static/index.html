@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Geopin - Roadshow Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-orb"></div>
+    <div class="background-orb orb-2"></div>
+    
+    <div class="dashboard-container">
+        <header>
+            <div class="header-content">
+                <h1>Smart Geopin <span>Roadshow Dashboard</span></h1>
+                <p>Real-time Early Warning & Consensus System for Landslide Prevention</p>
+            </div>
+            <div class="status-indicator">
+                <span class="pulse-dot"></span>
+                System Online
+            </div>
+        </header>
+
+        <main>
+            <section class="geopin-grid">
+                <div class="geopin-card safe" id="geopin-1">
+                    <div class="card-header">
+                        <h2>Node #001 (Gateway)</h2>
+                        <span class="badge">Active</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric">
+                            <span>Vibration (Hz)</span>
+                            <strong class="hz-value">0.0</strong>
+                        </div>
+                        <div class="metric">
+                            <span>Status</span>
+                            <strong class="status-text">Safe</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="geopin-card safe" id="geopin-2">
+                    <div class="card-header">
+                        <h2>Node #002 (Soldier)</h2>
+                        <span class="badge">Active</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric">
+                            <span>Vibration (Hz)</span>
+                            <strong class="hz-value">0.0</strong>
+                        </div>
+                        <div class="metric">
+                            <span>Status</span>
+                            <strong class="status-text">Safe</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="geopin-card safe" id="geopin-3">
+                    <div class="card-header">
+                        <h2>Node #003 (Soldier)</h2>
+                        <span class="badge">Active</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric">
+                            <span>Vibration (Hz)</span>
+                            <strong class="hz-value">0.0</strong>
+                        </div>
+                        <div class="metric">
+                            <span>Status</span>
+                            <strong class="status-text">Safe</strong>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="control-panel glass-panel">
+                <h2>Roadshow Controls</h2>
+                <p>Trigger a simulated 20Hz deep shear wave to demonstrate the local consensus assertion (OpCode 0x87) and self-healing mechanisms.</p>
+                
+                <div class="actions">
+                    <button id="trigger-btn" class="btn primary">
+                        <span class="btn-text">Trigger Landslide Simulation</span>
+                        <div class="btn-glow"></div>
+                    </button>
+                    <button id="reset-btn" class="btn secondary">
+                        Reset System
+                    </button>
+                </div>
+            </section>
+
+            <section class="log-panel glass-panel">
+                <h2>System Logs</h2>
+                <div class="terminal" id="terminal">
+                    <div class="log-line info">[System] Booting up Smart Geopin VM...</div>
+                    <div class="log-line info">[Network] ESP-NOW Mesh established.</div>
+                    <div class="log-line info">[System] Waiting for manual trigger...</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
