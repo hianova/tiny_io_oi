@@ -142,25 +142,34 @@ pub fn io_oi_node(_attr: TokenStream, item: TokenStream) -> TokenStream {
         impl #impl_generics #struct_name #ty_generics #where_clause {
             pub fn run_vm_script(
                 &mut self,
-                script: &crate::ArchivedVmScript,
+                script_bytes: &[u8],
                 fuel: &mut u32,
             ) -> Result<(), crate::VmError> {
-                for step in script.steps.iter() {
+                let viewer = io_oi_core::embedded::VmScriptViewer::new(script_bytes);
+                let count = viewer.step_count() as usize;
+
+                for i in 0..count {
                     if *fuel == 0 {
                         #safe_shutdown
                         return Err(crate::VmError::OutOfFuel);
                     }
                     *fuel -= 1;
 
+                    let step = viewer.get_step(i).ok_or(crate::VmError::BufferOverflow)?;
+
                     match step {
-                        crate::ArchivedVmStep::SetPwm { channel, speed } => {
+                        io_oi_core::VmStep::SetPwm { channel, speed } => {
+                            let channel = &channel;
+                            let speed = &speed;
                             #pwm_routing
                         }
-                        crate::ArchivedVmStep::Delay { ticks } => {
-                            let cost = (*ticks).min(*fuel);
+                        io_oi_core::VmStep::Delay { ticks } => {
+                            let cost = ticks.min(*fuel);
                             *fuel -= cost;
                         }
-                        crate::ArchivedVmStep::AssertOrYield { pin, expected } => {
+                        io_oi_core::VmStep::AssertOrYield { pin, expected } => {
+                            let pin = &pin;
+                            let expected = &expected;
                             #gpio_routing
                         }
                     }

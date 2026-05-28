@@ -175,10 +175,9 @@ mod tests {
         let mut gpio = MockGpio::new();
         gpio.set_pin(5, 1);
 
-        let archived = rkyv::check_archived_root::<VmScript>(&serialized).unwrap();
         let mut vm = MicroVm::new(10);
         
-        assert!(vm.run(archived, &mut motor, &gpio).is_ok());
+        assert!(vm.run(&serialized, &mut motor, &gpio).is_ok());
         assert_eq!(motor.current_speed, 120);
         assert_eq!(vm.fuel, 8);
     }
@@ -192,13 +191,11 @@ mod tests {
             ],
         };
         let serialized = rkyv::to_bytes::<_, 256>(&script).unwrap();
-        let archived = rkyv::check_archived_root::<VmScript>(&serialized).unwrap();
-        
         let mut motor = MockMotor::new();
         let gpio = MockGpio::new();
         let mut vm = MicroVm::new(1);
         
-        let res = vm.run(archived, &mut motor, &gpio);
+        let res = vm.run(&serialized, &mut motor, &gpio);
         assert_eq!(res, Err(VmError::OutOfFuel));
     }
 
@@ -300,8 +297,6 @@ mod tests {
             ],
         };
         let serialized = rkyv::to_bytes::<_, 256>(&script).unwrap();
-        let archived = rkyv::check_archived_root::<VmScript>(&serialized).unwrap();
-
         let mut soldier = MacroSoldier {
             motor: MockMotor::new(),
             sensor: MockGpio::new(),
@@ -309,7 +304,7 @@ mod tests {
         soldier.sensor.set_pin(5, 1);
 
         let mut fuel = 20;
-        let res = soldier.run_vm_script(archived, &mut fuel);
+        let res = soldier.run_vm_script(&serialized, &mut fuel);
         assert!(res.is_ok());
         assert_eq!(soldier.motor.current_speed, 180);
         assert_eq!(fuel, 18);
@@ -530,15 +525,13 @@ mod tests {
             ],
         };
         let serialized = rkyv::to_bytes::<_, 256>(&script).unwrap();
-        let archived = rkyv::check_archived_root::<VmScript>(&serialized).unwrap();
-
         let mut dual = MacroDualMotor {
             left: MockMotor::new(),
             right: MockMotor::new(),
         };
 
         let mut fuel = 10;
-        assert!(dual.run_vm_script(archived, &mut fuel).is_ok());
+        assert!(dual.run_vm_script(&serialized, &mut fuel).is_ok());
         assert_eq!(dual.left.current_speed, 100);
         assert_eq!(dual.right.current_speed, 200);
     }
@@ -565,8 +558,6 @@ mod tests {
             ],
         };
         let serialized = rkyv::to_bytes::<_, 256>(&script).unwrap();
-        let archived = rkyv::check_archived_root::<VmScript>(&serialized).unwrap();
-
         let mut robot = MacroSafeShutdown {
             left: MockMotor::new(),
             right: MockMotor::new(),
@@ -575,7 +566,7 @@ mod tests {
         robot.sensor.set_pin(5, 0);
 
         let mut fuel = 10;
-        let res = robot.run_vm_script(archived, &mut fuel);
+        let res = robot.run_vm_script(&serialized, &mut fuel);
         assert!(res.is_err());
         assert_eq!(robot.left.current_speed, 0);
         assert_eq!(robot.right.current_speed, 0);

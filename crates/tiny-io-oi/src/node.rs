@@ -248,9 +248,50 @@ impl<N: Network, M: Motor, S: IoOiState, G: Gpio + Adc, const CACHE_SIZE: usize>
                 OpCode::VmScriptDispatch => {
                     if !self.safe_mode {
                         // Phase 2: 安全解析 & 帶燃料限制 of VM 執行
-                        if let Ok(archived_script) = rkyv::check_archived_root::<VmScript>(payload) {
-                            let mut vm = MicroVm::new(100); // 100 fuel budget
-                            if let Err(e) = vm.run(archived_script, &mut self.motor, &self.gpio) {
+                        // Use VmScriptViewer via vm.run(payload) instead of rkyv validation
+                        let mut vm = MicroVm::new(100); // 100 fuel budget
+                        
+                        // We attempt to run it as a zero-decode script. 
+                        // If it fails with BufferOverflow, we fallback to StdBytecode.
+                        match vm.run(payload, &mut self.motor, &self.gpio) {
+                            Ok(()) => {}
+                            Err(VmError::BufferOverflow) => {
+                                // FALLBACK: Execute as standard library 8-byte bytecode
+                                let mut vm_std = MicroVm::new(100);
+                                let gossip_ctx = GossipContext {
+                                    my_mac: self.id,
+                                    network: &mut self.network,
+                                    recent_gossip: &self.recent_gossip,
+                                    current_time_us: get_time_us(),
+                                };
+                                if let Err(e) = vm_std.run_std(payload, &mut self.motor, &self.gpio, Some(gossip_ctx)) {
+                                    self.motor.stop();
+                                    let mut err_buf = [0u8; 5];
+                                    err_buf[0] = 0xFF; // Exception identifier
+                                    match e {
+                                        VmError::OutOfFuel => {
+                                            err_buf[1] = 0x01;
+                                        }
+                                        VmError::UnauthorizedAccess => {
+                                            err_buf[1] = 0x05;
+                                        }
+                                        VmError::VibrationHazard { .. } => {
+                                            err_buf[1] = 0x02;
+                                        }
+                                        VmError::MultiBandSpectrumHazard => {
+                                            err_buf[1] = 0x03;
+                                        }
+                                        VmError::AcousticFailureDetected => {
+                                            err_buf[1] = 0x04;
+                                        }
+                                        _ => {
+                                            err_buf[1] = 0x99;
+                                        }
+                                    }
+                                    let _ = self.network.broadcast(OpCode::Exception, &err_buf);
+                                }
+                            }
+                            Err(e) => {
                                 // Phase 3: Trap & Forward-Back (反向異常回報)
                                 self.motor.stop();
                                 let mut err_buf = [0u8; 5];
@@ -267,41 +308,6 @@ impl<N: Network, M: Motor, S: IoOiState, G: Gpio + Adc, const CACHE_SIZE: usize>
                                     }
                                     _ => {
                                         err_buf[1] = 0x03; // Standard Library Vibration/Acoustic exception code
-                                    }
-                                }
-                                let _ = self.network.broadcast(OpCode::Exception, &err_buf);
-                            }
-                        } else {
-                            // FALLBACK: Execute as standard library 8-byte bytecode
-                            let mut vm = MicroVm::new(100);
-                            let gossip_ctx = GossipContext {
-                                my_mac: self.id,
-                                network: &mut self.network,
-                                recent_gossip: &self.recent_gossip,
-                                current_time_us: get_time_us(),
-                            };
-                            if let Err(e) = vm.run_std(payload, &mut self.motor, &self.gpio, Some(gossip_ctx)) {
-                                self.motor.stop();
-                                let mut err_buf = [0u8; 5];
-                                err_buf[0] = 0xFF; // Exception identifier
-                                match e {
-                                    VmError::OutOfFuel => {
-                                        err_buf[1] = 0x01;
-                                    }
-                                    VmError::UnauthorizedAccess => {
-                                        err_buf[1] = 0x05;
-                                    }
-                                    VmError::VibrationHazard { .. } => {
-                                        err_buf[1] = 0x02;
-                                    }
-                                    VmError::MultiBandSpectrumHazard => {
-                                        err_buf[1] = 0x03;
-                                    }
-                                    VmError::AcousticFailureDetected => {
-                                        err_buf[1] = 0x04;
-                                    }
-                                    _ => {
-                                        err_buf[1] = 0x99;
                                     }
                                 }
                                 let _ = self.network.broadcast(OpCode::Exception, &err_buf);

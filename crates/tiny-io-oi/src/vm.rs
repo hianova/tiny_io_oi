@@ -1,5 +1,6 @@
 use crate::{Motor, Gpio, Adc};
-use io_oi_core::{ArchivedVmScript, ArchivedVmStep};
+use io_oi_core::embedded::VmScriptViewer;
+use io_oi_core::VmStep;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VmError {
@@ -14,6 +15,7 @@ pub enum VmError {
     SensorFusionHazard,
     PidHazard,
     SpatialRangingHazard,
+    BufferOverflow,
 }
 
 pub struct MicroVm {
@@ -29,42 +31,47 @@ impl MicroVm {
         }
     }
 
-    /// Run the archived VM script in a zero-copy manner.
+    /// Run the archived VM script in a zero-copy manner using VmScriptViewer.
     pub fn run<M: Motor, G: Gpio>(
         &mut self,
-        script: &ArchivedVmScript,
+        script_bytes: &[u8],
         motor: &mut M,
         gpio: &G,
     ) -> Result<(), VmError> {
-        for step in script.steps.iter() {
+        let viewer = VmScriptViewer::new(script_bytes);
+        let count = viewer.step_count() as usize;
+
+        for i in 0..count {
             if self.fuel == 0 {
                 self.trap_reason = Some(VmError::OutOfFuel);
                 return Err(VmError::OutOfFuel);
             }
             self.fuel -= 1;
 
+            let step = viewer.get_step(i).ok_or(VmError::BufferOverflow)?;
+
             match step {
-                ArchivedVmStep::SetPwm { channel, speed } => {
-                    if *channel >= 8 {
+                VmStep::SetPwm { channel, speed } => {
+                    if channel >= 8 {
                         self.trap_reason = Some(VmError::UnauthorizedAccess);
                         return Err(VmError::UnauthorizedAccess);
                     }
-                    motor.set_speed(*speed);
+                    motor.set_speed(speed);
                 }
-                ArchivedVmStep::Delay { ticks } => {
-                    let cost = (*ticks).min(self.fuel as u32);
+                VmStep::Delay { ticks } => {
+                    let cost = ticks.min(self.fuel as u32);
                     self.fuel -= cost;
                 }
-                ArchivedVmStep::AssertOrYield { pin, expected } => {
-                    if *pin >= 32 {
+                VmStep::AssertOrYield { pin, expected } => {
+                    if pin >= 32 {
                         self.trap_reason = Some(VmError::UnauthorizedAccess);
                         return Err(VmError::UnauthorizedAccess);
                     }
-                    let actual = gpio.read_pin(*pin);
-                    if actual != *expected {
+                    let actual = gpio.read_pin(pin);
+                    if actual != expected {
                         let err = VmError::AssertionFailed {
-                            pin: *pin,
-                            expected: *expected,
+                            pin,
+                            expected,
                             actual,
                         };
                         self.trap_reason = Some(err);
